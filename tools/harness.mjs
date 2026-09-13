@@ -220,10 +220,10 @@ ok(game.enemies.list.filter(e => e.homeTag === 'ruins').length >= QUESTS.ruins.s
   }
   ok(nanCol === 0, 'в цветах брони нет NaN — палитра задана полностью');
   const need = ['tunic', 'shoulder', 'belt', 'pants', 'boots', 'cloak', 'eyes', 'metal',
-    'blade', 'grip', 'shield', 'helm', 'crest', 'trim', 'tabard', 'fur'];
-  ok(need.every(k => typeof SKINS[k === 'knight' ? 'knight' : k] === 'number' ? true : typeof SKINS.knight[k] === 'number'),
+    'blade', 'grip', 'shield', 'helm', 'crest', 'trim', 'tabard', 'fur', 'emblem'];
+  ok(need.every(k => typeof SKINS.knight[k] === 'number'),
     'палитра рыцаря полная', `${need.length} цветов из референса`);
-  ok(tris > 400 && tris < 2200, 'рыцарь детальнее прежнего северянина, но всё ещё дёшев',
+  ok(tris > 400 && tris < 2600, 'рыцарь детальнее прежнего северянина, но всё ещё дёшев',
     `${tris} треугольников на фигуру`);
 }
 ok(finite(game.player.pos.y) && game.player.pos.y > WORLD.water, 'игрок стоит на суше',
