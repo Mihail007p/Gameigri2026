@@ -104,6 +104,21 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);co
 #btnJump    {right:calc(30px + var(--safe-r));bottom:calc(132px + var(--safe-b));width:64px;height:64px}
 #btnInteract{right:calc(118px + var(--safe-r));bottom:calc(124px + var(--safe-b));width:64px;height:64px;
   border-color:var(--line);color:var(--gold)}
+/* крик: большой кнопкой в нижнем ряду, слева от неё — подпись и переключатель слова */
+#btnShout   {right:calc(206px + var(--safe-r));bottom:calc(38px + var(--safe-b));width:66px;height:66px;
+  font-size:26px;background:rgba(28,66,104,.45);border-color:rgba(130,205,255,.4);color:#cfeaff}
+#btnShout.ready{box-shadow:0 0 0 1px rgba(130,205,255,.28),0 0 16px rgba(90,180,255,.28)}
+#btnShout.casting{background:rgba(140,215,255,.5);transform:scale(1.06)}
+#btnShoutNext{right:calc(212px + var(--safe-r));bottom:calc(112px + var(--safe-b));width:40px;height:40px;
+  font-size:16px;color:#9fd4ff;border-color:rgba(130,205,255,.28)}
+#shoutName  {position:absolute;z-index:11;right:calc(280px + var(--safe-r));bottom:calc(52px + var(--safe-b));
+  font-size:11px;letter-spacing:.4px;color:#bfe2ff;text-shadow:0 1px 3px #000;pointer-events:none;
+  max-width:150px;text-align:right;opacity:.85}
+/* заполнение кулдауна: тёмная шторка снизу вверх, transform — дёшево для GPU */
+#btnShout span{position:relative;z-index:1}
+#shoutCd    {position:absolute;inset:0;border-radius:50%;background:rgba(4,8,12,.72);
+  transform:scaleY(0);transform-origin:50% 100%;pointer-events:none}
+
 #btnBag     {right:calc(10px + var(--safe-r));top:calc(8px + var(--safe-t))}
 #btnMenu    {right:calc(60px + var(--safe-r));top:calc(8px + var(--safe-t))}
 

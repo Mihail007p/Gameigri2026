@@ -15,7 +15,8 @@ import { Fx } from './entities/fx.js';
 import { Player } from './entities/player.js';
 import { EnemyManager } from './entities/enemies.js';
 import { Npc } from './entities/npc.js';
-import { GAME, WORLD, NPCS, QUESTS, PLAYER as PC } from './config.js';
+import { WordWalls } from './world/wordwalls.js';
+import { GAME, WORLD, NPCS, QUESTS, PLAYER as PC, NIGHT } from './config.js';
 import { clamp } from './utils/noise.js';
 
 const $ = (id) => document.getElementById(id);
@@ -70,6 +71,11 @@ window.__diag = () => {
     `врагов: всего ${g.enemies?.list.length}, активных ${g.enemies?.list.filter(e => e.active).length},` +
       ` живых ${g.enemies?.list.filter(e => e.active && !e.dead).length}`,
     `время суток ${g.hour?.toFixed(2)} ч · ночь ${g.sky?.night.toFixed(2)} · тени ${g.sky?.sun.castShadow}`,
+    `крик: ${g.player?.shout?.name ?? '-'} · слов ${g.player?.words.length ?? 0} · кд ${(g.player?.shoutCd ?? 0).toFixed(1)}с` +
+    ` · рывок ${(g.player?.dashT ?? 0).toFixed(2)}с · стены слов ${(g.wordWalls?.serialize() || []).filter(Boolean).length}/` +
+    `${g.wordWalls?.list.length ?? 0}`,
+    `ночная угроза: урон врагов ×${(1 + (g.sky?.night ?? 0) * NIGHT.dmgMul).toFixed(2)},` +
+    ` радиус обзора ×${(1 + (g.sky?.night ?? 0) * NIGHT.detectMul).toFixed(2)}`,
   ];
   const c = r.getContext();
   const d = c.getExtension('WEBGL_debug_renderer_info');
@@ -195,6 +201,7 @@ async function buildWorld() {
   game.player = new Player(game);
   game.enemies = new EnemyManager(game);
   game.npcs = [new Npc(game, { ...NPCS.torsten, yaw: 2.4 })];
+  game.wordWalls = new WordWalls(scene);
   await nextFrame();
 
   hud.loading(0.92, 'Свет и тени…');
@@ -237,6 +244,14 @@ function findTarget() {
     const d = Math.hypot(loot.pos.x - p.x, loot.pos.z - p.z);
     consider(d, { kind: 'loot', enemy: loot, label: `Обыскать: ${loot.def.name}` });
   }
+  for (const wall of game.wordWalls.list) {
+    const d = Math.hypot(wall.x - p.x, wall.z - p.z);
+    if (d < 3.8) consider(d, {
+      kind: 'word', wall,
+      label: p.words.includes(wall.word)
+        ? 'Стена слов (руны погасли)' : 'Стена слов: ' + wall.def.name,
+    });
+  }
   const w = game.structures.well;
   if (w) {
     const d = Math.hypot(w.x - p.x, w.z - p.z);
@@ -267,6 +282,31 @@ function doInteract(t) {
     else hud.toast('Ничего ценного');
     fx.burst(t.enemy.pos.x, t.enemy.pos.y + 0.6, t.enemy.pos.z, 0xbfae8a, 6, 1.4, 1.0, 0.5, 0.8);
     return;
+  }
+  if (t.kind === 'word') {
+    const wall = t.wall;
+    if (p.words.includes(wall.word)) {
+      return say('Стена слов', 'Руны потускнели — это слово уже звучит в тебе. Камень молчит.',
+        [{ label: 'Отойти' }]);
+    }
+    const def = wall.def;
+    return say('Стена слов',
+      'Древний камень покрыт рунами, и они светятся изнутри, будто дышат.\n' +
+      'Слово само ложится на язык: «' + def.word + '».\n\n' + def.hint + '.',
+      [{ label: 'Принять слово силы', go: () => {
+        const learned = p.learnWord(wall.word);
+        game.wordWalls.markUsed(wall.id);
+        sfx.word();
+        fx.shockwave(wall.x, wall.y + 1.6, wall.z, 0x9fe8ff,
+          { count: 34, speed: 9, life: 1.0, size: 1.3 });
+        fx.burst(wall.x, wall.y + 2.2, wall.z, 0xcfeeff, 18, 2.6, 2.4, 1.2, 1.2);
+        game.shake(0.6);
+        hud.toast('Выучен крик: ' + def.name, 'good');
+        p.addXp(60);
+        closeDialogue();
+        if (learned) saveGame(true);
+      } },
+      { label: 'Не сейчас' }]);
   }
   if (t.kind === 'well') {
     if (game.wellCd > 0) return;
@@ -323,7 +363,11 @@ function talkTo(npc) {
 
   if (q.stage === 2) {
     return say('Торстен', 'Я видел дым над руинами и слышал, как они выли. Значит, правда сделал… Держи золото и вот это — амулет, который носил мой дед. Он ещё послужит.',
-      [{ label: 'Забрать награду', go: () => { quest.complete(game.player); closeDialogue(); } }]);
+      [{ label: 'Забрать награду', go: () => {
+        quest.complete(game.player);
+        closeDialogue();
+        hud.toast('Торстен: «К востоку от руин, на взгорье, стоит стена с рунами — там учатся крику»', 'good');
+      } }]);
   }
 
   return say('Торстен', 'В деревне спокойно впервые за много лет. Если пойдёшь к озеру — держись пристани, там глубже, но волки не любят воду.',
@@ -339,6 +383,7 @@ function saveGame(silent = false) {
     enemies: game.enemies.serialize(),
     chests: game.structures.chests.map(c => ({ id: c.id, open: c.open, looted: c.looted })),
     quest: quest.serialize(),
+    walls: game.wordWalls.serialize(),
     hour: +game.hour.toFixed(3),
     time: Math.round(game.time),
   };
@@ -360,6 +405,7 @@ function loadGame() {
     }
   }
   quest.restore(s.quest);
+  game.wordWalls.restore(s.walls);
   game.hour = s.hour ?? GAME.startHour;
   game.time = s.time ?? 0;
   return true;
@@ -376,6 +422,7 @@ function newGame() {
   for (const e of game.enemies.list) e.reset();
   for (const c of game.structures.chests) { c.looted = false; c.open = false; c.lidPivot.rotation.x = 0; }
   quest.restore(null);
+  game.wordWalls.reset();
   game.hour = GAME.startHour;
   game.time = 0;
 }
@@ -389,7 +436,7 @@ function startPlay(loaded) {
   input.flush();
   updateRotateHint();
   tryFullscreen();
-  if (!loaded) hud.toast('Совет: удерживай 🛡, чтобы блокировать, и бей в спину', '');
+  if (!loaded) hud.toast('Совет: 🛡 блокирует удары, 🐉 — крик. Ищи стены слов со светящимися рунами', '');
 }
 
 function updateRotateHint() {
@@ -466,6 +513,7 @@ function loop(now) {
     game.structures?.update(dt, game.sky.night, game.sky.lightLevel);
     game.water?.update(dt, game.sky, Settings.q);
     game.props?.applyNight(game.sky.night);
+    game.wordWalls?.update(dt, game.sky.night);
     renderer.render(scene, camera);
   }
 
@@ -510,7 +558,17 @@ function update(dt) {
   game.water.update(dt, game.sky, q);
   game.structures.update(dt, game.sky.night, game.sky.lightLevel);
   game.props.applyNight(game.sky.night);
+  game.wordWalls.update(dt, game.sky.night);
   game.fx.update(dt);
+
+  // ночь делает мертвецов злее — предупреждаем один раз за ночь
+  const night = game.sky.night;
+  if (night > NIGHT.warnAt && !game.nightWarned) {
+    game.nightWarned = true;
+    hud.toast('Смеркается. Твари видят дальше и бьют больнее', 'bad');
+  } else if (night < NIGHT.clearAt) {
+    game.nightWarned = false;
+  }
 
   // подсказка взаимодействия
   game.target = findTarget();
@@ -520,6 +578,7 @@ function update(dt) {
   hud.vitals(p, PC.xpPerLevel[Math.min(p.level, PC.xpPerLevel.length - 1)] || p.level * 1200);
   hud.compass(p.camYaw);
   hud.quests(quest.tracker());
+  hud.shoutState(p);
 
   // автосейв
   game.autosave += dt;
@@ -539,6 +598,7 @@ function updateSlow(dt) {
   game.sky.update(game.hour, camera.position, Settings.q);
   game.water.update(dt, game.sky, Settings.q);
   game.structures.update(dt, game.sky.night, game.sky.lightLevel);
+  game.wordWalls.update(dt, game.sky.night);
   game.fx.update(dt);
   for (const n of game.npcs) n.update(dt, p);
   game._clean.copy(camera.position);

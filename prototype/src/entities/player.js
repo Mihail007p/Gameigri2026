@@ -1,7 +1,7 @@
 // Игрок: движение от 3-го лица, камера, бой, выносливость, прокачка, инвентарь.
 import * as THREE from 'three';
 import { Rig, SKINS } from './humanoid.js';
-import { PLAYER as P, WORLD, ITEMS } from '../config.js';
+import { PLAYER as P, WORLD, ITEMS, SHOUTS, START_WORDS } from '../config.js';
 import { heightAt, slopeAt } from '../world/terrain.js';
 import { clamp, lerp, smoothstep } from '../utils/noise.js';
 import { sfx } from '../core/sfx.js';
@@ -12,6 +12,7 @@ const _wish = new THREE.Vector3();
 const _tmp = new THREE.Vector3();
 const _camTarget = new THREE.Vector3();
 const _tip = new THREE.Vector3();
+const _sh = new THREE.Vector3();
 
 // гравитация: в падении сильнее, чем при «отлипании» от земли — так прыжок ощущается упругим
 const GAME_GRAVITY = -22;
@@ -42,6 +43,12 @@ export class Player {
     this.equipped = [];
 
     this.attackT = -1; this.attackCd = 0; this.hitDone = true;
+    // крики (Thu'um): выученные слова, экипированное, кулдаун, фаза выкрикивания
+    this.words = START_WORDS.slice();
+    this.word = this.words[0];
+    this.shoutCd = 0; this.shoutT = -1; this.shoutDone = true; this.shoutDef = null;
+    this.dashT = 0; this.dashDur = 0.3; this.dashDist = 0;
+    this.dashDir = new THREE.Vector3(0, 0, -1);
     this.blocking = false; this.blockBroken = 0;
     this.stDelay = 0;
     this.hurtCd = 0;
@@ -117,7 +124,8 @@ export class Player {
     _wish.set(0, 0, 0).addScaledVector(_fwd, m.y).addScaledVector(_right, m.x);
     const mag = Math.min(1, _wish.length());
 
-    this._running = (m.run || mag > 0.92) && this.st > 1 && !this.blocking && !this.swim && this.grounded;
+    this._running = (m.run || mag > 0.92) && this.st > 1 && !this.blocking && !this.swim
+      && this.grounded && this.dashT <= 0;
     const maxSpeed = this.swim ? P.swimSpeed : this.blocking ? P.walkSpeed * 0.55
       : this._running ? P.runSpeed : P.walkSpeed;
     this.maxSpeed = maxSpeed;
@@ -152,6 +160,19 @@ export class Player {
         this.vy = P.jumpVel; this.grounded = false; this.st -= 8; this.stDelay = P.stRegenDelay;
         sfx.jump();
       }
+    }
+
+    // «Вихрь»: на время рывка управление перехвачено, скорость гаснет к концу
+    if (this.dashT > 0) {
+      this.dashT -= dt;
+      const k = clamp(this.dashT / this.dashDur, 0, 1);
+      const sp = (this.dashDist / this.dashDur) * (0.55 + 0.9 * k);  // средний коэф. = 1 → пролетает ровно def.dist
+      this.vel.x = this.dashDir.x * sp;
+      this.vel.z = this.dashDir.z * sp;
+      this.yaw = Math.atan2(this.dashDir.x, this.dashDir.z);
+      this.vy = Math.max(this.vy, -2.5);          // в рывке не падаем камнем
+      this.grounded = true;
+      if (Math.random() < 0.75) this.game.fx.trail(this.pos.x, this.pos.y, this.pos.z, 0xbfe6ff, 2, 1.3);
     }
 
     // интеграция
@@ -202,12 +223,107 @@ export class Player {
     this.rig.root.rotation.y = this.yaw;
   }
 
+  /* ═══════════════ крики (Thu'um) ═══════════════ */
+  get shout() { return SHOUTS[this.word] || null; }
+
+  /** Выучить слово у стены сил. Возвращает определение крика или null. */
+  learnWord(id) {
+    const def = SHOUTS[id];
+    if (!def || this.words.includes(id)) return null;
+    this.words.push(id);
+    this.word = id;                 // новое слово сразу экипируется
+    this.shoutT = -1;
+    return def;
+  }
+
+  /** Переключить экипированный крик по кругу */
+  cycleWord() {
+    if (this.words.length < 2) return this.shout;
+    const i = this.words.indexOf(this.word);
+    this.word = this.words[(i + 1) % this.words.length];
+    const def = this.shout;
+    sfx.ui();
+    this.game.hud.toast(`Крик: ${def.name} — «${def.word}»`, '');
+    return def;
+  }
+
+  /** Попытка выкрикнуть. Возвращает false, если крик не готов. */
+  tryShout() {
+    const def = this.shout;
+    if (!def || this.dead || this.shoutT >= 0 || this.dashT > 0 || this.blocking) return false;
+    if (this.shoutCd > 0) {
+      this.game.hud.toast(`Крик не готов: ${Math.ceil(this.shoutCd)} с`, 'bad');
+      return false;
+    }
+    if (this.st < def.stCost) {
+      this.game.hud.toast('Не хватает выносливости для крика', 'bad');
+      return false;
+    }
+    this.st -= def.stCost;
+    this.stDelay = P.stRegenDelay;
+    this.shoutT = 0; this.shoutDone = false; this.shoutDef = def;
+    return true;
+  }
+
+  /** Момент выдоха слова: волна, урон/отброс или рывок */
+  _doShout(def) {
+    const cy = this.camYaw;
+    _sh.set(-Math.sin(cy), 0, -Math.cos(cy));      // куда смотрит камера (горизонт)
+    this.yaw = Math.atan2(_sh.x, _sh.z);           // тело разворачивается вместе с криком
+
+    sfx.shout(def.kind);
+    this.game.fx.shockwave(this.pos.x + _sh.x * 0.7, this.pos.y + 1.2, this.pos.z + _sh.z * 0.7,
+      def.kind === 'frost' ? 0x9fe4ff : 0xffe3ab,
+      { count: def.kind === 'force' ? 30 : 24, speed: 13, life: 0.55,
+        size: 1.15, dir: _sh, spread: def.arc || 1.2 });
+    this.game.shake(def.kind === 'force' ? 0.8 : 0.4);
+
+    if (def.kind === 'dash') {
+      this.dashT = def.dur; this.dashDur = def.dur; this.dashDist = def.dist;
+      this.dashDir.copy(_sh);
+      this.invuln = Math.max(this.invuln, def.dur + 0.15);
+      sfx.whoosh();
+      return;
+    }
+
+    let hits = 0;
+    for (const e of this.game.enemies.list) {
+      if (e.dead) continue;
+      _tmp.copy(e.pos).sub(this.pos);
+      const dist = _tmp.length();
+      if (dist > def.range + e.radius) continue;
+      _tmp.normalize();
+      if (_tmp.dot(_sh) < Math.cos(def.arc)) continue;   // только в конусе взгляда
+      e.damage(def.dmg, this.pos, false);
+      e.applyImpulse(_tmp.x, _tmp.z, def.knock * clamp(1 - dist / (def.range * 1.7), 0.25, 1), def.stun || 0);
+      if (def.slow) e.chill(def.slow);
+      if (++hits >= (def.maxTargets || 4)) break;
+    }
+    if (hits) sfx.hit();
+  }
+
   /* ═══════════════ бой ═══════════════ */
   _combat(dt, input) {
     if (this.attackCd > 0) this.attackCd -= dt;
+    if (this.shoutCd > 0) this.shoutCd -= dt;
+
+    // крик: кнопка 🐉 выкрикивает экипированное слово, ⇄ переключает слово
+    if (input.consume('shoutNext')) this.cycleWord();
+    if (input.consume('shout')) this.tryShout();
+    if (this.shoutT >= 0) {
+      const def = this.shoutDef || this.shout;
+      this.shoutT += dt;
+      if (!this.shoutDone && this.shoutT >= def.castTime) { this.shoutDone = true; this._doShout(def); }
+      if (this.shoutT >= def.castTime + P.shoutCastPad) {
+        this.shoutT = -1;
+        this.shoutCd = def.cd;
+        this.shoutDef = null;
+      }
+    }
+
     const wantAttack = input.held.attack || input.consume('attack');
     if (wantAttack && this.attackT < 0 && this.attackCd <= 0 && !this.blocking &&
-        this.st >= P.attackStCost && this.blockBroken <= 0) {
+        this.st >= P.attackStCost && this.blockBroken <= 0 && this.shoutT < 0 && this.dashT <= 0) {
       this.attackT = 0; this.hitDone = false;
       this.st -= P.attackStCost; this.stDelay = P.stRegenDelay;
       sfx.swing();
@@ -342,7 +458,8 @@ export class Player {
     this.rig.animate({
       speed: this.speed, maxSpeed: this.maxSpeed || P.runSpeed,
       grounded: this.grounded, vy: this.vy,
-      attack: this.attackT, block: this.blocking, swim: this.swim,
+      attack: this.shoutT >= 0 ? Math.min(0.99, this.shoutT * 1.8) : this.attackT,
+      block: this.blocking, swim: this.swim,
       strafe: this.strafe || 0,
     }, dt);
   }
@@ -378,6 +495,7 @@ export class Player {
       hp: Math.round(this.hp), st: Math.round(this.st), level: this.level, xp: Math.round(this.xp),
       gold: this.gold, kills: this.kills, hpMax: this.hpMax, dmg: this.dmg,
       inv: this.inventory.map(i => ({ ...i })), eq: this.equipped.slice(),
+      words: this.words.slice(), word: this.word,
     };
   }
 
@@ -393,6 +511,12 @@ export class Player {
     this.st = clamp(s.st ?? P.stMax, 0, this.stMax);
     this.inventory = (s.inv || []).map(i => ({ ...i }));
     this.equipped = s.eq || [];
+    // слова силы из сейва (старые сейвы без них получают стартовый набор)
+    this.words = Array.isArray(s.words) ? s.words.filter(w => SHOUTS[w]) : [];
+    if (!this.words.length) this.words = START_WORDS.slice();
+    this.word = SHOUTS[s.word] && this.words.includes(s.word) ? s.word : this.words[0];
+    this.shoutCd = 0; this.shoutT = -1; this.shoutDone = true; this.shoutDef = null;
+    this.dashT = 0; this.invuln = 0;
     this.dead = false; this.rig.deathT = -1; this.rig.pose.rotation.x = 0;
     this.rig.material.opacity = 1; this.rig.material.transparent = false;
     this.rig.root.position.copy(this.pos);

@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Северный Край — прототип v0.1</title>
+<title>Северный Край — прототип v0.2</title>
 <!-- ЕДИНСТВЕННАЯ точка входа в игру. Живёт в корне репозитория, чтобы ссылка для
      теста на телефоне была короткой и открывалась БЕЗ цепочки перенаправлений:
        https://raw.githack.com/Mihail007p/Gameigri2026/<ветка>/play.html
@@ -70,6 +70,9 @@
     <button class="tbtn" id="btnBlock"  data-label="🛡"><span>🛡</span></button>
     <button class="tbtn" id="btnJump"   data-label="▲"><span>▲</span></button>
     <button class="tbtn" id="btnInteract" data-label="✋"><span>✋</span></button>
+    <button class="tbtn" id="btnShout" data-label="🐉"><i id="shoutCd"></i><span>🐉</span></button>
+    <button class="tbtn small" id="btnShoutNext" data-label="⇄"><span>⇄</span></button>
+    <div id="shoutName" class="hidden">Крик</div>
     <button class="tbtn small" id="btnBag"  data-label="🎒"><span>🎒</span></button>
     <button class="tbtn small" id="btnMenu" data-label="☰"><span>☰</span></button>
   </div>
@@ -78,7 +81,7 @@
   <div id="loading" class="screen">
     <div class="panel narrow">
       <h1>СЕВЕРНЫЙ КРАЙ</h1>
-      <p class="sub">прототип v0.1 · Tecno Pova Neo 3</p>
+      <p class="sub">прототип v0.2 · Tecno Pova Neo 3</p>
       <div class="loader"><i id="loadBar"></i></div>
       <p id="loadText" class="tiny">Генерация мира…</p>
     </div>
@@ -87,11 +90,11 @@
   <div id="title" class="screen hidden">
     <div class="panel narrow">
       <h1>СЕВЕРНЫЙ КРАЙ</h1>
-      <p class="sub">Skyrim-подобный прототип для слабых Android</p>
+      <p class="sub">Skyrim-подобный прототип для слабых Android · крики, стены слов, опасная ночь</p>
       <button class="mbtn" id="btnContinue">Продолжить</button>
       <button class="mbtn" id="btnNew">Новая игра</button>
       <button class="mbtn" id="btnSettings">Настройки</button>
-      <p class="tiny hint">Телефон: поверни горизонтально.<br>ПК: WASD + мышь, ЛКМ — удар, ПКМ — блок, E — действие, Esc — меню.</p>
+      <p class="tiny hint">Телефон: поверни горизонтально. 🐉 — крик, ⇄ — сменить слово.<br>ПК: WASD + мышь, ЛКМ — удар, ПКМ — блок, Z — крик, X — сменить слово, E — действие, Esc — меню.</p>
     </div>
   </div>
 

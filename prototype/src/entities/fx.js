@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { clamp } from '../utils/noise.js';
 
-const MAX = 72;
+const MAX = 96;
 
 export class Fx {
   constructor(scene) {
@@ -39,13 +39,48 @@ export class Fx {
         vy: up * (0.4 + Math.random() * 0.9) * s * 0.45,
         vz: Math.sin(a) * s * (1 - e * 0.5),
         life, max: life, size: size * (0.6 + Math.random() * 0.8),
-        hex, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 12,
+        hex, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 12, g: 1,
       });
     }
   }
 
   burstAt(vec, hex, count, speed, up, life, size) {
     this.burst(vec.x, vec.y, vec.z, hex, count, speed, up, life, size);
+  }
+
+  /**
+   * Ударная волна крика: кольцо частиц, разлетающееся горизонтально БЕЗ гравитации.
+   * dir — направление конуса (0 = во все стороны), spread — полуугол в радианах.
+   */
+  shockwave(x, y, z, hex, { count = 26, speed = 13, life = 0.5, size = 1.1, dir = null, spread = Math.PI } = {}) {
+    for (let i = 0; i < count; i++) {
+      if (this.items.length >= MAX) this.items.shift();
+      // угол равномерно внутри конуса (или полный круг, если dir не задан)
+      const a = dir
+        ? Math.atan2(dir.x, dir.z) + (Math.random() * 2 - 1) * spread
+        : Math.random() * Math.PI * 2;
+      const s = speed * (0.6 + Math.random() * 0.7);
+      this.items.push({
+        x, y: y + Math.random() * 0.5, z,
+        vx: Math.sin(a) * s, vy: 0.35 + Math.random() * 0.5, vz: Math.cos(a) * s,
+        life, max: life, size: size * (0.6 + Math.random() * 0.7),
+        hex, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 8, g: 0,
+      });
+    }
+  }
+
+  /** След рывка «Вихрь»: редкие искры вдоль пути, тоже без гравитации */
+  trail(x, y, z, hex, count = 2, speed = 1.1) {
+    for (let i = 0; i < count; i++) {
+      if (this.items.length >= MAX) this.items.shift();
+      const a = Math.random() * Math.PI * 2;
+      this.items.push({
+        x: x + Math.cos(a) * 0.25, y: y + 0.4 + Math.random() * 1.0, z: z + Math.sin(a) * 0.25,
+        vx: Math.cos(a) * speed, vy: 0.25, vz: Math.sin(a) * speed,
+        life: 0.32, max: 0.32, size: 0.7 + Math.random() * 0.5,
+        hex, rot: Math.random() * 6.28, spin: 2, g: 0,
+      });
+    }
   }
 
   update(dt) {
@@ -55,8 +90,9 @@ export class Fx {
       const p = this.items[i];
       p.life -= dt;
       if (p.life <= 0) { this.items.splice(i, 1); continue; }
-      p.vy -= 12 * dt;                     // гравитация частиц
-      p.vx *= 1 - 2.2 * dt; p.vz *= 1 - 2.2 * dt;
+      if (p.g) p.vy -= 12 * dt;            // гравитация только у «материальных» частиц
+      const drag = p.g ? 2.2 : 3.4;        // волна крика гаснет быстрее
+      p.vx *= 1 - drag * dt; p.vz *= 1 - drag * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       p.rot += p.spin * dt;
       const k = clamp(p.life / p.max, 0, 1);

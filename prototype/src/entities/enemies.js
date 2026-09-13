@@ -3,7 +3,7 @@
 // тени отбрасывают только ближайшие — иначе теневой проход удваивает draw calls.
 import * as THREE from 'three';
 import { Rig, SKINS } from './humanoid.js';
-import { ENEMIES, WORLD, SPAWN_POINTS } from '../config.js';
+import { ENEMIES, WORLD, SPAWN_POINTS, NIGHT } from '../config.js';
 import { heightAt } from '../world/terrain.js';
 import { clamp, lerp, rng } from '../utils/noise.js';
 import { sfx } from '../core/sfx.js';
@@ -13,6 +13,18 @@ const WOLF_SKIN = { fur: 0x5b5348, fur2: 0x3b352e, eyes: 0xffcf6a };
 const RIG_SCALE_BAR = { draugr: 2.25, wolf: 1.25 };
 
 const _tmp = new THREE.Vector3();
+
+/**
+ * «Угроза ночи»: 0 днём → 1 в глубокую ночь. Враги видят дальше, бьют больнее
+ * и бегают быстрее. Это делает ночь осмысленным риском, а не просто темнотой.
+ */
+export function threatOf(game) {
+  const sky = game && game.sky;
+  if (!sky) return 0;
+  const night = clamp(sky.night || 0, 0, 1);
+  const weather = clamp(sky.threat || 0, 0, 1);   // метель тоже добавляет опасности
+  return clamp(night * 0.85 + weather * 0.35, 0, 1);
+}
 
 class Enemy {
   constructor(game, type, sp, index) {
@@ -48,6 +60,8 @@ class Enemy {
     this.speed = 0; this.shadowsOn = false;
     this.rnd = r;
     this.hurtFlash = 0;
+    // последствия криков: отброс (импульс), оглушение, заморозка
+    this.knockX = 0; this.knockZ = 0; this.stun = 0; this.slow = 0;
 
     // полоска здоровья (видна только у раненого врага)
     const barY = (RIG_SCALE_BAR[kind] || 2.2) * this.def.scale;
@@ -93,6 +107,23 @@ class Enemy {
     }
     if (this.hp <= 0) this.die();
   }
+
+  /**
+   * Импульс от крика: врага отбрасывает и (опционально) оглушает.
+   * Работает через скорость, которая гаснет в _move, поэтому не ломает ИИ.
+   */
+  applyImpulse(dirX, dirZ, power, stun = 0) {
+    if (this.dead) return;
+    const l = Math.hypot(dirX, dirZ) || 1;
+    this.knockX += (dirX / l) * power;
+    this.knockZ += (dirZ / l) * power;
+    if (stun > 0) {
+      this.stun = Math.max(this.stun, stun);
+      this.attackT = -1; this.hitDone = true;   // сбиваем замах
+    }
+  }
+
+  chill(sec) { this.slow = Math.max(this.slow, sec); }
 
   die() {
     this.hp = 0;
@@ -162,8 +193,26 @@ class Enemy {
 
     if (this.aggroTimer > 0) { this.aggroTimer -= dt; if (this.aggroTimer <= 0) this.aggro = false; }
     if (this.cd > 0) this.cd -= dt;
+    if (this.slow > 0) this.slow -= dt;
+    const slowK = this.slow > 0 ? 0.45 : 1;        // «Ледяное дыхание»: вдвое медленнее
 
-    const canSee = dist < this.def.detect && !player.dead && Math.abs(player.pos.y - this.pos.y) < 12;
+    // оглушение криком: враг не думает и не бьёт, только катится от импульса
+    if (this.stun > 0) {
+      this.stun -= dt;
+      this._move(dt, 0, 0);
+      this.rig.animate({ speed: this.speed, maxSpeed: this.def.runSpeed, grounded: true, vy: 0,
+        attack: -1, block: false, swim: false }, dt);
+      if (this.bar.visible) this.bar.lookAt(this.game.camera.position);
+      this.rig.material.emissive.setRGB(0.06, 0.2, 0.36);
+      return;
+    }
+
+    // ночь и непогода делают тварей опаснее
+    const th = threatOf(this.game);
+    const detect = this.def.detect * (1 + th * NIGHT.detectMul);
+    this.dmgNow = Math.round(this.def.dmg * (1 + th * NIGHT.dmgMul));
+
+    const canSee = dist < detect && !player.dead && Math.abs(player.pos.y - this.pos.y) < 12;
     if (canSee || this.aggro) {
       if (this.state !== 'chase' && this.state !== 'attack') {
         this.state = 'chase';
@@ -175,7 +224,7 @@ class Enemy {
         if (!this.hitDone && this.attackT * this.def.attackTime >= this.def.attackHitAt) {
           this.hitDone = true;
           if (dist < this.def.attackRange + 0.85) {
-            player.damage(this.def.dmg, this.pos);
+            player.damage(this.dmgNow ?? this.def.dmg, this.pos);
             this.game.fx.burst(player.pos.x, player.pos.y + 1.2, player.pos.z, 0xff6a4a, 6, 2.2, 1.2, 0.4, 1);
           } else {
             this.game.fx.burst(this.pos.x + dx / dist, this.pos.y + 1, this.pos.z + dz / dist, 0x9fb4c8, 3, 1.2, 0.6, 0.3, 0.7);
@@ -188,7 +237,8 @@ class Enemy {
         sfx.swing();
         this._move(dt, 0, 0);
       } else {
-        this._moveToward(dt, player.pos.x, player.pos.z, this.def.runSpeed);
+        this._moveToward(dt, player.pos.x, player.pos.z,
+          this.def.runSpeed * slowK * (1 + th * NIGHT.speedMul));
       }
       this._face(dt, player.pos.x, player.pos.z);
     } else {
@@ -201,7 +251,7 @@ class Enemy {
         const a = this.rnd() * 6.283, rr = this.rnd() * (this.def.detect * 0.4);
         this.target.set(this.home.x + Math.cos(a) * rr, 0, this.home.z + Math.sin(a) * rr);
       }
-      this._moveToward(dt, this.target.x, this.target.z, this.def.speed * 0.45);
+      this._moveToward(dt, this.target.x, this.target.z, this.def.speed * 0.45 * slowK);
       if (this.speed > 0.2) this._face(dt, this.target.x, this.target.z);
     }
 
@@ -216,6 +266,9 @@ class Enemy {
       if (this.hurtFlash > 0) this.hurtFlash -= dt;
       else if (dist > 30) this.bar.visible = false;
     }
+
+    // иней на замороженном враге (ставим ПОСЛЕ rig.animate — он сбрасывает emissive)
+    if (this.slow > 0) this.rig.material.emissive.setRGB(0.06, 0.2, 0.36);
   }
 
   _face(dt, tx, tz) {
@@ -235,6 +288,15 @@ class Enemy {
   }
 
   _move(dt, vx, vz) {
+    // отбрасывание от крика: добавляем импульс и быстро гасим его
+    if (this.knockX !== 0 || this.knockZ !== 0) {
+      vx += this.knockX; vz += this.knockZ;
+      const decay = Math.pow(0.02, dt);           // ~98 % затухания за секунду
+      this.knockX *= decay; this.knockZ *= decay;
+      if (Math.abs(this.knockX) < 0.08) this.knockX = 0;
+      if (Math.abs(this.knockZ) < 0.08) this.knockZ = 0;
+    }
+
     // разделение в толпе, чтобы не слипались в одну точку
     const list = this.game.enemies.list;
     for (let i = 0; i < list.length; i++) {
@@ -277,6 +339,7 @@ class Enemy {
     this.rig.root.rotation.set(0, this.yaw, 0);
     this.rig.visible = false; this.active = false;
     this.bar.visible = false; this.barFg.scale.x = 1; this.barFg.position.x = 0;
+    this.knockX = 0; this.knockZ = 0; this.stun = 0; this.slow = 0; this.dmgNow = this.def.dmg;
   }
 }
 

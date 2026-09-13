@@ -10,11 +10,13 @@ import { Water } from '../prototype/src/world/water.js';
 import { Structures } from '../prototype/src/world/structures.js';
 import { Fx } from '../prototype/src/entities/fx.js';
 import { Player } from '../prototype/src/entities/player.js';
-import { EnemyManager } from '../prototype/src/entities/enemies.js';
+import { EnemyManager, threatOf } from '../prototype/src/entities/enemies.js';
 import { Npc } from '../prototype/src/entities/npc.js';
+import { WordWalls } from '../prototype/src/world/wordwalls.js';
 import { Settings } from '../prototype/src/core/settings.js';
 import { PerfMonitor } from '../prototype/src/core/perf.js';
-import { WORLD, GAME, NPCS, QUESTS, SPAWN_POINTS, PLAYER as PC } from '../prototype/src/config.js';
+import { WORLD, GAME, NPCS, QUESTS, SPAWN_POINTS, PLAYER as PC,
+  SHOUTS, START_WORDS, WORD_WALLS, NIGHT, ENEMIES } from '../prototype/src/config.js';
 
 let fails = 0, checks = 0;
 const ok = (cond, msg, extra = '') => {
@@ -38,7 +40,7 @@ const hudStub = {
   toasts: [], numbers: 0, deaths: 0,
   toast(t, k) { this.toasts.push(t); },
   damageNumber() { this.numbers++; },
-  vignette() {}, prompt() {}, vitals() {}, compass() {}, quests() {}, perf() {},
+  vignette() {}, prompt() {}, vitals() {}, compass() {}, quests() {}, perf() {}, shoutState() {},
   showDeath() { this.deaths++; },
 };
 const inputStub = {
@@ -344,6 +346,180 @@ sec('Бой и лут');
   p.restore({ ...beforeDeath, hp: 0 });
   ok(p.hp >= 1, 'сейв с нулевым HP не возрождает мертвеца', `hp=${p.hp.toFixed(0)}`);
   p.dead = false;
+}
+
+/* ═══ 6b. крики (Thu'um) и стены слов ═══ */
+sec('Крики и стены слов');
+{
+  const p = game.player;
+  const SP = WORLD.spawn;
+
+  /* --- конфиг криков --- */
+  const kinds = ['force', 'dash', 'frost'];
+  ok(Object.keys(SHOUTS).length === 3, 'в конфиге три крика', Object.keys(SHOUTS).join(', '));
+  ok(Object.values(SHOUTS).every(d => d.cd > 0 && d.stCost > 0 && d.castTime > 0 && kinds.includes(d.kind)),
+    'у каждого крика есть кулдаун, цена и время выдоха');
+  ok(SHOUTS.fus.dmg > PC.attackDmg && SHOUTS.fus.range > PC.attackRange,
+    'крик сильнее и дальнобойнее обычного удара', `${SHOUTS.fus.dmg} урона на ${SHOUTS.fus.range} м`);
+  ok(SHOUTS.wuld.dist / SHOUTS.wuld.dur < 40,
+    'рывок не быстрее 40 м/с — иначе игрок провалится сквозь рельеф',
+    `${(SHOUTS.wuld.dist / SHOUTS.wuld.dur).toFixed(1)} м/с`);
+  ok(Object.values(SHOUTS).every(d => d.stCost < PC.stMax), 'на любой крик хватает полной выносливости');
+
+  /* --- стены слов стоят там, где до них можно дойти --- */
+  let wallBad = 0;
+  const words = new Set();
+  for (const w of WORD_WALLS) {
+    const h = heightAt(w.x, w.z);
+    if (!(h > WORLD.water + 1)) wallBad++;                 // не под водой
+    if (slopeAt(w.x, w.z) > 0.32) wallBad++;                // не на обрыве
+    if (Math.abs(w.x) > WORLD.half - 20 || Math.abs(w.z) > WORLD.half - 20) wallBad++;
+    if (!SHOUTS[w.word] || START_WORDS.includes(w.word)) wallBad++;
+    if (words.has(w.word)) wallBad++;                       // слова не дублируются
+    words.add(w.word);
+    if (Math.hypot(w.x - SP.x, w.z - SP.z) < 25) wallBad++; // не в точке спавна
+  }
+  ok(wallBad === 0, 'стены слов на суше, в пределах мира и учат новым словам',
+    `${WORD_WALLS.length} стен, высота ${heightAt(WORD_WALLS[0].x, WORD_WALLS[0].z).toFixed(1)} и ${heightAt(WORD_WALLS[1].x, WORD_WALLS[1].z).toFixed(1)} м`);
+
+  /* --- стены строятся и гаснут после изучения --- */
+  game.wordWalls = new WordWalls(scene);
+  const walls = game.wordWalls;
+  ok(walls.list.length === WORD_WALLS.length, 'стены созданы', `${walls.list.length}`);
+  ok(walls.list.every(w => w.def && w.group && w.runes && Number.isFinite(w.y)),
+    'у каждой стены есть геометрия, руны и высота');
+  walls.update(dt, 1);
+  ok(walls.list.every(w => Number.isFinite(w.runeMat.opacity) && w.runeMat.opacity > 0 && w.runeMat.opacity <= 1.05),
+    'руны пульсируют без NaN', `opacity ${walls.list[0].runeMat.opacity.toFixed(2)}`);
+  walls.markUsed(WORD_WALLS[0].id);
+  ok(walls.isUsed(WORD_WALLS[0].id) && walls.list[0].runeMat.opacity < 0.4, 'изученная стена гаснет');
+  const wallSave = walls.serialize();
+  walls.reset();
+  ok(!walls.list.some(w => w.used), 'сброс возвращает руны');
+  walls.restore(wallSave);
+  ok(walls.isUsed(WORD_WALLS[0].id), 'состояние стен переживает сохранение');
+  walls.reset();
+  ok(walls.nearest(new THREE.Vector3(WORD_WALLS[1].x, 0, WORD_WALLS[1].z + 2), 3.6) === walls.list[1],
+    'стена находится по близости для подсказки ✋');
+
+  /* --- изучение и переключение слов --- */
+  p.words = START_WORDS.slice(); p.word = START_WORDS[0];
+  ok(p.words.length === 1 && p.word === 'fus', 'игра начинается с одного слова', p.words.join(','));
+  const learned = p.learnWord('wuld');
+  ok(learned && learned.id === 'wuld' && p.word === 'wuld', 'новое слово учится и сразу экипируется');
+  ok(p.learnWord('wuld') === null, 'дважды выучить одно слово нельзя');
+  ok(p.learnWord('несуществующее') === null, 'несуществующее слово отклоняется');
+  const w1 = p.word;
+  p.cycleWord();
+  ok(p.word !== w1 && p.words.includes(p.word), 'кнопка ⇄ переключает крик', `${w1} → ${p.word}`);
+  p.learnWord('fo');
+  ok(p.words.length === 3, 'можно выучить все три слова', p.words.join(','));
+
+  /* --- «Безжалостная сила»: конус, урон, отброс, оглушение --- */
+  const list = game.enemies.list;
+  const front = list[0], side = list[1], back = list[2], far = list[3];
+  const place = (e, x, z) => {
+    e.dead = false; e.active = true; e.hp = e.hpMax; e.stun = 0; e.slow = 0;
+    e.knockX = 0; e.knockZ = 0; e.aggro = false; e.attackT = -1; e.cd = 0;
+    e.pos.set(x, heightAt(x, z), z);
+  };
+  p.word = 'fus'; p.shoutCd = 0; p.shoutT = -1; p.shoutDef = null; p.dashT = 0;
+  p.st = p.stMax; p.dead = false; p.blocking = false; p.invuln = 0;
+  p.pos.set(SP.x, heightAt(SP.x, SP.z), SP.z); p.vel.set(0, 0, 0); p.camYaw = 0;  // взгляд в -Z
+  place(front, SP.x, SP.z - 6);          // прямо перед игроком
+  place(side, SP.x + 22, SP.z);          // сбоку и далеко
+  place(back, SP.x, SP.z + 8);           // за спиной
+  place(far, SP.x, SP.z - 34);           // в конусе, но за пределами длины
+  const st0 = p.st, hpF = front.hp, hpS = side.hp, hpB = back.hp, hpFar = far.hp;
+  // крик занимает несколько кадров: ждём, пока он завершится и встанет на кулдаун
+  const runUntil = (pred, max = 90) => { let n = 0; while (!pred() && n++ < max) p.update(dt, inputStub); return n; };
+  inputStub.press('shout');
+  let guard = runUntil(() => p.shoutCd > 0, 60);
+  ok(guard > 0 && guard < 60, 'крик выдыхается и встаёт на кулдаун', `${(guard * dt).toFixed(2)} с`);
+  ok(front.hp < hpF, 'крик бьёт врага перед игроком', `${hpF} → ${front.hp}`);
+  ok(Math.hypot(front.knockX, front.knockZ) > 1, 'врага отбросило импульсом',
+    `${Math.hypot(front.knockX, front.knockZ).toFixed(1)} м/с`);
+  ok(front.stun > 0, 'враг оглушён', `${front.stun.toFixed(2)} с`);
+  ok(back.hp === hpB, 'крик не бьёт в спину');
+  ok(far.hp === hpFar, 'крик не достаёт дальше своей длины', `${SHOUTS.fus.range} м`);
+  ok(side.hp === hpS, 'вне конуса урона нет');
+  ok(p.st < st0, 'крик тратит выносливость', `${st0.toFixed(0)} → ${p.st.toFixed(0)}`);
+  ok(p.shoutCd > 0, 'после крика пошёл кулдаун', `${p.shoutCd.toFixed(1)} с`);
+  hudStub.toasts.length = 0;
+  ok(p.tryShout() === false, 'во время кулдауна крик не срабатывает');
+  ok(hudStub.toasts.some(t => /не готов/i.test(t)), 'игроку объяснили, что крик ещё не готов');
+
+  /* --- оглушённый враг беспомощен --- */
+  place(front, SP.x, SP.z - 12);
+  front.stun = 1.0; front.aggro = true;
+  const hpP = p.hp;
+  p.invuln = 0;
+  for (let i = 0; i < 45; i++) front.update(dt, p);
+  ok(p.hp >= hpP, 'оглушённый враг не бьёт игрока', `${hpP.toFixed(0)} → ${p.hp.toFixed(0)}`);
+  ok(front.stun <= 0, 'оглушение проходит за отведённое время');
+  ok(front.pos.distanceTo(new THREE.Vector3(SP.x, front.pos.y, SP.z - 12)) < 6,
+    'враг догнал игрока после оглушения (ИИ живой)', `${front.pos.distanceTo(new THREE.Vector3(SP.x, front.pos.y, SP.z - 12)).toFixed(1)} м`);
+
+  /* --- «Вихрь»: рывок вперёд --- */
+  p.word = 'wuld'; p.shoutCd = 0; p.shoutT = -1; p.shoutDef = null; p.dashT = 0;
+  p.st = p.stMax; p.camYaw = 0;
+  p.pos.set(SP.x, heightAt(SP.x, SP.z), SP.z); p.vel.set(0, 0, 0); p.invuln = 0;
+  const z0 = p.pos.z;
+  inputStub.press('shout');
+  const toDash = runUntil(() => p.dashT > 0, 30);      // ждём начала рывка
+  ok(toDash < 30 && p.dashT > 0, 'рывок начинается после выдоха слова', `${(toDash * dt).toFixed(2)} с`);
+  guard = runUntil(() => p.dashT <= 0, 60);             // и ждём, пока он кончится
+  const moved = Math.abs(p.pos.z - z0);
+  ok(guard < 60, 'рывок заканчивается сам', `${(guard * dt).toFixed(2)} с`);
+  ok(moved > SHOUTS.wuld.dist * 0.7 && moved < SHOUTS.wuld.dist * 1.35,
+    'рывок переносит игрока примерно на свою дистанцию',
+    `${moved.toFixed(1)} м из ${SHOUTS.wuld.dist}`);
+  ok(p.pos.y >= heightAt(p.pos.x, p.pos.z) - 0.05 && Number.isFinite(p.pos.y),
+    'после рывка игрок не под землёй', `y=${p.pos.y.toFixed(2)}`);
+  ok(p.invuln > 0 || p.shoutCd > 0, 'после рывка остался след в состоянии (неуязвимость/кулдаун)');
+
+  /* --- «Ледяное дыхание»: замедление --- */
+  const frosty = list[5];
+  place(frosty, SP.x, SP.z - 5);
+  p.word = 'fo'; p.shoutCd = 0; p.shoutT = -1; p.shoutDef = null; p.st = p.stMax; p.camYaw = 0;
+  p.pos.set(SP.x, heightAt(SP.x, SP.z), SP.z);
+  inputStub.press('shout');
+  guard = runUntil(() => p.shoutCd > 0, 60);
+  ok(guard < 60, 'ледяное дыхание выдыхается', `${(guard * dt).toFixed(2)} с`);
+  ok(frosty.hp < frosty.hpMax, 'мороз наносит урон', `${frosty.hpMax} → ${frosty.hp}`);
+  ok(frosty.slow > 0, 'мороз замедляет врага', `${frosty.slow.toFixed(1)} с`);
+  const speedDay = (() => { frosty.slow = 0; frosty.update(dt, p); return frosty.speed; })();
+  const speedChilled = (() => { frosty.slow = 3; frosty.update(dt, p); return frosty.speed; })();
+  ok(speedChilled < speedDay || speedChilled === 0,
+    'замороженный враг двигается медленнее', `${speedDay.toFixed(2)} → ${speedChilled.toFixed(2)} м/с`);
+
+  /* --- ночь делает тварей опаснее --- */
+  const sky = game.sky;
+  sky.update(12, new THREE.Vector3(0, 10, 0), Settings.q);
+  ok(threatOf(game) < 0.05, 'днём ночной угрозы нет', threatOf(game).toFixed(2));
+  sky.update(1, new THREE.Vector3(0, 10, 0), Settings.q);
+  const th = threatOf(game);
+  ok(th > 0.7, 'в глубокую ночь угроза высокая', th.toFixed(2));
+  const e3 = list[6];
+  place(e3, SP.x + 5, SP.z);
+  p.pos.set(SP.x, heightAt(SP.x, SP.z), SP.z);
+  e3.update(dt, p);
+  const baseDmg = ENEMIES[e3.type].dmg;
+  ok(e3.dmgNow > baseDmg, 'ночью враг бьёт больнее', `${baseDmg} → ${e3.dmgNow} (×${(1 + th * NIGHT.dmgMul).toFixed(2)})`);
+  sky.update(12, new THREE.Vector3(0, 10, 0), Settings.q);
+  e3.update(dt, p);
+  ok(e3.dmgNow === baseDmg, 'днём урон возвращается к базовому', `${e3.dmgNow}`);
+
+  /* --- слова переживают сохранение --- */
+  const sv = JSON.parse(JSON.stringify(p.serialize()));
+  ok(Array.isArray(sv.words) && sv.words.length === 3, 'слова силы пишутся в сейв', (sv.words || []).join(','));
+  p.words = START_WORDS.slice(); p.word = START_WORDS[0];
+  p.restore(sv);
+  ok(p.words.length === 3 && p.word === sv.word, 'слова восстанавливаются из сейва', p.words.join(','));
+  p.restore({ ...sv, words: null });
+  ok(p.words.length === START_WORDS.length && p.word === START_WORDS[0],
+    'старый сейв без слов получает стартовый набор');
+  sky.update(12, new THREE.Vector3(0, 10, 0), Settings.q);
 }
 
 /* ═══ 7. квест ═══ */

@@ -29,6 +29,7 @@ export class Input {
       stick: $('stick'), knob: $('knob'),
       attack: $('btnAttack'), block: $('btnBlock'), jump: $('btnJump'),
       interact: $('btnInteract'), bag: $('btnBag'), menu: $('btnMenu'),
+      shout: $('btnShout'), shoutNext: $('btnShoutNext'),
     };
 
     this._bindZones();
@@ -154,6 +155,8 @@ export class Input {
     bind(this.dom.block, 'block', { hold: true });
     bind(this.dom.jump, 'jump');
     bind(this.dom.interact, 'interact');
+    bind(this.dom.shout, 'shout');            // крик: одно нажатие = один выдох
+    bind(this.dom.shoutNext, 'shoutNext');    // переключить выученное слово
     bind(this.dom.bag, 'bag');
     bind(this.dom.menu, 'menu');
   }
@@ -171,6 +174,8 @@ export class Input {
       switch (e.code) {
         case 'Space': this.press('jump'); e.preventDefault(); break;
         case 'KeyE': case 'KeyF': this.press('interact'); break;
+        case 'KeyZ': this.press('shout'); break;
+        case 'KeyX': this.press('shoutNext'); break;
         case 'KeyQ': this.held.block = true; break;
         case 'KeyR': this.held.attack = true; break;
         case 'KeyI': case 'Tab': this.press('bag'); e.preventDefault(); break;

@@ -20,6 +20,8 @@ export class Hud {
       perf: $('perfPanel'), p1: $('perfLine1'), p2: $('perfLine2'), p3: $('perfLine3'),
       tape: $('compassTape'),
       interact: $('btnInteract'),
+      shout: $('btnShout'), shoutNext: $('btnShoutNext'),
+      shoutCd: $('shoutCd'), shoutName: $('shoutName'), shoutIcon: $('btnShout')?.querySelector('span'),
       dlg: $('dialogue'), dlgName: $('dlgName'), dlgText: $('dlgText'), dlgOpts: $('dlgOptions'),
       inv: $('inventory'), invGold: $('invGold'), invLevel: $('invLevel'), invDmg: $('invDmg'),
       invKills: $('invKills'), invList: $('invList'),
@@ -152,6 +154,32 @@ export class Hud {
       const k = 1 - it.t / it.life;
       it.el.style.transform = `translate(${(v.x * 0.5 + 0.5) * w}px,${(-v.y * 0.5 + 0.5) * h}px) translate(-50%,-50%) scale(${0.7 + k * 0.5})`;
       it.el.style.opacity = k < 0.35 ? (k / 0.35).toFixed(2) : '1';
+    }
+  }
+
+  /* ───────── крик: имя, иконка, кулдаун ───────── */
+  shoutState(p) {
+    const def = p.shout;
+    if (!def || !this.el.shout) return;
+    // подпись и иконка меняются только при смене слова — не дёргаем DOM каждый кадр
+    if (this._wordCache !== p.word) {
+      this._wordCache = p.word;
+      if (this.el.shoutName) {
+        this.el.shoutName.textContent = def.name;
+        this.el.shoutName.classList.remove('hidden');
+      }
+      if (this.el.shoutIcon) this.el.shoutIcon.textContent = def.icon;
+      this.el.shout.dataset.label = def.icon;
+      if (this.el.shoutNext) this.el.shoutNext.classList.toggle('hidden', p.words.length < 2);
+    }
+    const casting = p.shoutT >= 0;
+    const cd = casting ? 1 : Math.max(0, Math.min(1, p.shoutCd / def.cd));
+    const key = cd.toFixed(2) + (casting ? 'c' : '');
+    if (this._cdCache !== key) {
+      this._cdCache = key;
+      this.el.shoutCd.style.transform = `scaleY(${cd})`;
+      this.el.shout.classList.toggle('ready', !casting && p.shoutCd <= 0);
+      this.el.shout.classList.toggle('casting', casting);
     }
   }
 

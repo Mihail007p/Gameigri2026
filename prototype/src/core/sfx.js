@@ -81,6 +81,35 @@ class Sfx {
   quest()  { [392, 523, 659].forEach((f, i) => this.tone(f, 0.4, { type: 'sine', gain: 0.13, delay: i * 0.12 })); }
   death()  { this.tone(160, 1.4, { type: 'sawtooth', gain: 0.22, to: 40 }); }
   wolf()   { this.throttled('wf', 400, () => this.tone(420, 0.35, { type: 'sawtooth', gain: 0.1, to: 260 })); }
+  /**
+   * Крик: низкий «голос» + шумовой выдох. Разная окраска под тип крика,
+   * но всегда без ассетов — чистый синтез.
+   */
+  shout(kind = 'force') {
+    if (!this.on) return;
+    const base = kind === 'frost' ? 150 : kind === 'dash' ? 300 : 110;
+    this.throttled('sh', 120, () => {
+      this.tone(base, 0.75, { type: 'sawtooth', gain: 0.3, to: base * 0.45 });
+      this.tone(base * 1.5, 0.5, { type: 'square', gain: 0.12, to: base * 0.7 });
+      this.noise(0.55, { freq: kind === 'frost' ? 2600 : 700, to: 160, gain: 0.3, q: 0.5 });
+      // «эхо» — второй, более тихий слой через 90 мс: даёт ощущение объёма
+      this.tone(base * 0.5, 0.6, { type: 'sine', gain: 0.14, to: base * 0.28, delay: 0.09 });
+    });
+  }
+
+  /** Рывок «Вихрь»: короткий свист воздуха */
+  whoosh() {
+    this.throttled('wh', 90, () => this.noise(0.34, { freq: 320, to: 2400, gain: 0.22, q: 0.6 }));
+  }
+
+  /** Стена слов: гул камня и «вдох» силы */
+  word() {
+    if (!this.on) return;
+    [196, 294, 392, 588].forEach((f, i) =>
+      this.tone(f, 1.1, { type: 'sine', gain: 0.15, delay: i * 0.13 }));
+    this.noise(1.4, { freq: 90, gain: 0.12, q: 0.3, type: 'lowpass' });
+  }
+
   ambient() {
     // низкий «ветер»: редкий шумовой всплеск с медленным фильтром
     if (!this.on) return;

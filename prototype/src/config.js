@@ -38,7 +38,7 @@ export const GAME = {
   startHour: 7.2,
   autosaveSec: 30,
   gravity: -22,
-  version: '0.1.0',
+  version: '0.2.0',
   saveKey: 'severny_kray_save_v1',
 };
 
@@ -57,6 +57,7 @@ export const PLAYER = {
   blockMul: 0.3, blockDrain: 9, blockStCost: 4,
   radius: 0.42, height: 1.78, eye: 1.62,
   camDist: 4.3, camHeight: 1.55, camPitchMin: -0.55, camPitchMax: 1.05,
+  shoutCastPad: 0.22,       // сколько длится «отдача» крика после удара волны
   xpPerLevel: [0, 100, 260, 500, 850, 1350, 2000, 2900],
   hpPerLevel: 18, dmgPerLevel: 3,
 };
@@ -119,4 +120,51 @@ export const ITEMS = {
   potion: { id: 'potion', name: 'Зелье лечения', desc: 'Восстанавливает 40 HP', stack: true, use: 'heal', power: 40 },
   bread: { id: 'bread', name: 'Хлеб', desc: 'Восстанавливает 12 HP', stack: true, use: 'heal', power: 12 },
   amulet: { id: 'amulet', name: 'Амулет Севера', desc: '+15 к максимальному здоровью', stack: false, use: 'equipHp', power: 15 },
+};
+
+/**
+ * КРИКИ (аналог Thu'um из Skyrim). Учатся у стен слов (WORD_WALLS).
+ * Всё живёт в одном слоте: игрок экипирует один крик и переключает его кнопкой ⇄.
+ * kind:
+ *   force — конус: урон + сильный отброс + оглушение
+ *   dash  — рывок вперёд, на время рывка игрок неуязвим
+ *   frost — конус: урон + замедление врага (slowK на slow секунд)
+ */
+export const SHOUTS = {
+  fus: {
+    id: 'fus', name: 'Безжалостная сила', word: 'ФУС · РО · ДА', icon: '🐉', kind: 'force',
+    range: 13, arc: 0.85, dmg: 26, knock: 17, stun: 1.1,
+    cd: 18, stCost: 16, castTime: 0.45, maxTargets: 5,
+    hint: 'Отбрасывает всех в конусе перед тобой и оглушает на секунду',
+  },
+  wuld: {
+    id: 'wuld', name: 'Вихрь', word: 'ВУЛД · НА · КЕЙ', icon: '🌀', kind: 'dash',
+    dist: 9.5, dur: 0.34, cd: 12, stCost: 20, castTime: 0.2,
+    hint: 'Мгновенный рывок вперёд. В полёте ты неуязвим — уходишь из-под удара',
+  },
+  fo: {
+    id: 'fo', name: 'Ледяное дыхание', word: 'ФО · КЕН · ДИИН', icon: '❄', kind: 'frost',
+    range: 11, arc: 1.0, dmg: 18, knock: 3, slow: 4.0, slowK: 0.45,
+    cd: 24, stCost: 18, castTime: 0.5, maxTargets: 6,
+    hint: 'Стужа: враги двигаются и бьют вдвое медленнее 4 секунды',
+  },
+};
+
+/** Крик, который игрок знает с самого начала */
+export const START_WORDS = ['fus'];
+
+/** Стены слов: каменные плиты с рунами, у которых учится новый крик */
+export const WORD_WALLS = [
+  // места выбраны по карте высот: сухо (выше уровня воды), уклон < 0.26, в пределах мира
+  { id: 'wwRuins', word: 'wuld', x: 104, z: 30,   yaw: -0.75, where: 'на взгорье к востоку от руин' },
+  { id: 'wwNorth', word: 'fo',   x: -112, z: 120, yaw: 2.5,   where: 'на северном склоне, за лесом' },
+];
+
+/** Насколько опаснее становится мир ночью (множители к характеристикам врагов) */
+export const NIGHT = {
+  detectMul: 0.55,   // +55 % к радиусу обнаружения в глубокую ночь
+  dmgMul: 0.35,      // +35 % к урону
+  speedMul: 0.12,    // +12 % к скорости бега
+  warnAt: 0.45,      // при какой «ночности» показать предупреждение игроку
+  clearAt: 0.2,      // ниже этого значения предупреждение можно показать снова
 };
