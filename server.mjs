@@ -1,12 +1,13 @@
 // Мини-статик-сервер для прототипа. Без зависимостей, работает и в песочнице, и локально.
 // Запуск:  npm start   (или: node server.mjs 3000)
-// Отдаёт папку prototype/ по адресу http://0.0.0.0:PORT
+// Отдаёт корень репозитория по адресу http://0.0.0.0:PORT
+// (игра — корневой play.html, её файлы — в prototype/)
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(fileURLToPath(new URL('./prototype', import.meta.url)));
+const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PORT = Number(process.env.PORT || process.argv[2] || 3000);
 const HOST = '0.0.0.0'; // обязательно 0.0.0.0 — иначе телефон/превью не достучится
 
@@ -32,6 +33,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     let path = decodeURIComponent(url.pathname);
     if (path === '/' || path === '') path = '/index.html';
+    if (/(^|\/)(node_modules|\.git)(\/|$)/.test(path)) { res.writeHead(403); return res.end('403'); }
 
     // защита от выхода за пределы папки
     const file = join(ROOT, normalize(path).replace(/^(\.\.[/\\])+/, ''));

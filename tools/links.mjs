@@ -20,9 +20,12 @@ console.log(`  ${jsd}/play.html`);
 console.log('\nКоммит (фиксированная версия, кэш навсегда):');
 console.log(`  https://cdn.jsdelivr.net/gh/${REPO}@${sha}/play.html`);
 console.log('\nЗапасной CDN (показывает предупреждение, нужен клик «Open the page»):');
-console.log(`  https://raw.githack.com/${REPO}/${branch}/prototype/index.html`);
+console.log(`  https://raw.githack.com/${REPO}/${branch}/play.html`);
+console.log('\nЗапасной CDN (без страницы-предупреждения):');
+console.log(`  https://cdn.statically.io/gh/${REPO}/${branch}/play.html`);
 console.log('\nСброс кэша jsDelivr (открыть в браузере после пуша):');
-console.log(`  https://purge.jsdelivr.net/gh/${REPO}@${branch}/play.html`);
-console.log(`  https://purge.jsdelivr.net/gh/${REPO}@${branch}/prototype/index.html`);
+for (const f of ['play.html', 'prototype/style.css', 'prototype/src/main.js']) {
+  console.log(`  https://purge.jsdelivr.net/gh/${REPO}@${branch}/${f}`);
+}
 console.log(`\nHEAD ${sha.slice(0, 8)} · запушен в origin/${branch}: ${pushed ? 'ДА' : 'НЕТ — сначала git push'}\n`);
 if (!pushed) process.exitCode = 1;
