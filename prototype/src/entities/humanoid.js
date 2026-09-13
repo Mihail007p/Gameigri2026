@@ -30,6 +30,7 @@ export class Rig {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     this.parts = {};
     if (kind === 'wolf') this._buildWolf(o);
+    else if (o.colors && o.colors.knight) this._buildKnight(o);
     else this._buildHumanoid(o);
     this.root.scale.setScalar(o.scale || 1);
     this.phase = Math.random() * 6.283;
@@ -111,6 +112,90 @@ export class Rig {
     armR.add(this.tip);
 
     // базовая поза
+    this.parts.armR.rotation.set(S_IDLE.ax, 0, S_IDLE.az);
+    this.parts.armL.rotation.set(-0.12, 0, 0.20);
+    this.parts.legL.rotation.x = 0; this.parts.legR.rotation.x = 0;
+  }
+
+
+  /* ═══════════ рыцарь (игрок): сталь, золото, багровый табард ═══════════
+     Собран по референсу docs/art/knight_reference.png. Как и остальные фигуры —
+     5 слитых мешей (ноги×2, корпус, руки×2), поэтому draw calls не растут:
+     вся броня, шлем, плащ и табард «впекаются» в геометрию своих пивотов. */
+  _buildKnight(o) {
+    const c = o.colors;
+
+    const legParts = () => [
+      place(box(0.22, 0.80, 0.24, c.pants), 0, -0.44, 0),          // стальной понож
+      place(box(0.20, 0.15, 0.13, c.metal), 0, -0.42, 0.12),       // коленный наплечник
+      place(box(0.24, 0.32, 0.26, c.boots), 0, -0.74, 0.02),       // голенище сапога
+      place(box(0.26, 0.13, 0.35, c.boots), 0, -0.885, 0.05),      // ступня
+      place(box(0.245, 0.10, 0.26, c.belt), 0, -0.06, 0),          // бедренный ремешок
+    ];
+    this._part('legL', merge(legParts()), -0.145, HIP, 0);
+    this._part('legR', merge(legParts()), 0.145, HIP, 0);
+
+    const bp = [
+      place(box(0.50, 0.60, 0.30, c.tunic), 0, 0.34, 0),           // кираса
+      place(box(0.12, 0.46, 0.06, c.metal), 0, 0.36, 0.155),       // центральное ребро
+      place(box(0.50, 0.09, 0.32, c.trim), 0, 0.60, 0),            // золотая линия у ключиц
+      place(box(0.34, 0.62, 0.05, c.tabard), 0, 0.32, 0.165),      // табард на груди
+      place(box(0.30, 0.46, 0.05, c.tabard), 0, -0.17, 0.15),      // юбка табарда спереди
+      place(box(0.46, 0.62, 0.05, c.cloak), 0, 0.18, -0.185),      // плащ за спиной
+      place(box(0.56, 0.15, 0.36, c.fur), 0, 0.665, -0.01),        // меховой воротник
+      place(box(0.58, 0.12, 0.35, c.belt), 0, 0.06, 0),            // ремень
+      place(box(0.12, 0.10, 0.05, c.trim), 0, 0.06, 0.185),        // пряжка
+      // наплечники в два слоя с золотой кромкой
+      place(box(0.24, 0.16, 0.30, c.shoulder), -0.35, 0.60, 0),
+      place(box(0.24, 0.16, 0.30, c.shoulder), 0.35, 0.60, 0),
+      place(box(0.20, 0.12, 0.26, c.shoulder), -0.40, 0.475, 0),
+      place(box(0.20, 0.12, 0.26, c.shoulder), 0.40, 0.475, 0),
+      place(box(0.245, 0.035, 0.305, c.trim), -0.35, 0.525, 0),
+      place(box(0.245, 0.035, 0.305, c.trim), 0.35, 0.525, 0),
+      // шея и шлем с Т-забралом
+      place(box(0.16, 0.10, 0.16, c.belt), 0, 0.72, 0),
+      place(box(0.30, 0.26, 0.30, c.helm), 0, 0.88, 0),
+      place(box(0.30, 0.07, 0.07, c.helm), 0, 0.795, 0.14),        // подбородочная дуга
+      place(box(0.06, 0.22, 0.06, c.helm), 0, 0.86, 0.16),         // наносник
+      place(box(0.22, 0.045, 0.03, c.eyes), 0, 0.905, 0.155),      // прорезь забрала
+      place(box(0.05, 0.15, 0.26, c.crest), 0, 1.055, -0.02),      // золотой гребень
+      place(box(0.09, 0.06, 0.09, c.crest), 0, 1.14, -0.02),       // навершие гребня
+    ];
+    this._part('body', merge(bp), 0, HIP, 0);
+
+    const armParts = () => [
+      place(box(0.16, 0.34, 0.18, c.tunic), 0, -0.17, 0),          // стальное плечо
+      place(box(0.17, 0.05, 0.19, c.trim), 0, -0.355, 0),          // золотое кольцо у локтя
+      place(box(0.15, 0.28, 0.16, c.belt), 0, -0.51, 0),           // кожаное предплечье
+      place(box(0.13, 0.14, 0.14, c.belt), 0, -0.70, 0),           // перчатка
+    ];
+
+    // левая рука + круглый щит с умбоном (8 граней — дёшево и «кругло»)
+    const la = armParts();
+    if (o.shield) {
+      la.push(place(cyl(0.315, 0.315, 0.05, 8, c.metal), 0.02, -0.46, 0.205, Math.PI / 2));
+      la.push(place(cyl(0.29, 0.29, 0.07, 8, c.shield), 0.02, -0.46, 0.225, Math.PI / 2));
+      la.push(place(cyl(0.09, 0.09, 0.11, 8, c.metal), 0.02, -0.46, 0.27, Math.PI / 2));
+      la.push(place(box(0.05, 0.40, 0.04, c.trim), 0.02, -0.46, 0.265));   // вертикаль герба
+      la.push(place(box(0.40, 0.05, 0.04, c.trim), 0.02, -0.46, 0.265));   // перекладина герба
+    }
+    this._part('armL', merge(la), -0.345, HIP + SHOULDER, 0);
+
+    // правая рука + полуторный меч с золотой гардой
+    const ra = armParts();
+    if (o.weapon !== false) {
+      const w = o.weaponColors || c;
+      ra.push(place(box(0.06, 0.06, 0.06, w.trim ?? w.metal), 0, -0.70, 0.02));   // навершие
+      ra.push(place(box(0.05, 0.20, 0.05, w.grip), 0, -0.80, 0.02));              // рукоять
+      ra.push(place(box(0.32, 0.05, 0.09, w.trim ?? w.metal), 0, -0.91, 0.02));   // гарда
+      ra.push(place(box(0.07, 0.74, 0.14, w.blade), 0, -1.30, 0.02));            // клинок
+      ra.push(place(cone(0.05, 0.13, 4, w.blade), 0, -1.72, 0.02, Math.PI));     // остриё
+    }
+    const armR = this._part('armR', merge(ra), 0.345, HIP + SHOULDER, 0);
+    this.tip = new THREE.Object3D();
+    this.tip.position.set(0, -1.62, 0.02);
+    armR.add(this.tip);
+
     this.parts.armR.rotation.set(S_IDLE.ax, 0, S_IDLE.az);
     this.parts.armL.rotation.set(-0.12, 0, 0.20);
     this.parts.legL.rotation.x = 0; this.parts.legR.rotation.x = 0;
@@ -279,6 +364,16 @@ export class Rig {
 
 /* ── палитры ── */
 export const SKINS = {
+  // палитра снята с референса docs/art/knight_reference.png:
+  // холодная сталь, тёмная сталь, кожа, багрец, бронза, золото
+  knight: {
+    knight: true,
+    skin: 0xd8a882, tunic: 0x8fa3b0, shoulder: 0x9db0bd, belt: 0x5a4632,
+    pants: 0x5c7284, boots: 0x4a3a28, hair: 0x8fa3b0, cloak: 0x8e2740,
+    eyes: 0x14181c, metal: 0xb8c4cc, blade: 0xcfd8de, grip: 0x3a2a1c,
+    shield: 0x6b5138, helm: 0x93a7b4, crest: 0xbfa14f, trim: 0xbfa14f,
+    tabard: 0x8e2740, fur: 0xa89880, beard: 0x0,
+  },
   nord: {
     skin: 0xd8a882, tunic: 0x53616e, shoulder: 0x6d7a86, belt: 0x4a3a26,
     pants: 0x4a4238, boots: 0x3a2f24, hair: 0x6b4a2a, cloak: 0x4a3a2c, eyes: 0x2a3a44,

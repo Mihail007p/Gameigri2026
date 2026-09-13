@@ -12,6 +12,7 @@ import { Fx } from '../prototype/src/entities/fx.js';
 import { Player } from '../prototype/src/entities/player.js';
 import { EnemyManager, threatOf } from '../prototype/src/entities/enemies.js';
 import { Npc } from '../prototype/src/entities/npc.js';
+import { SKINS } from '../prototype/src/entities/humanoid.js';
 import { WordWalls } from '../prototype/src/world/wordwalls.js';
 import { Weather } from '../prototype/src/world/weather.js';
 import { Settings } from '../prototype/src/core/settings.js';
@@ -202,6 +203,29 @@ ok(game.enemies.list.every(e => e.homeTag), 'у врагов есть метка
 ok(game.enemies.list.filter(e => e.homeTag === 'ruins').length >= QUESTS.ruins.stages[1].need,
   'в руинах хватает врагов под квест',
   `${game.enemies.list.filter(e => e.homeTag === 'ruins').length} из ${QUESTS.ruins.stages[1].need}`);
+
+/* рыцарь: новая внешность игрока по референсу docs/art/knight_reference.png */
+{
+  const r = game.player.rig;
+  ok(r.kind === 'knight' && SKINS.knight.knight === true, 'игрок теперь рыцарь (новая внешность)');
+  ok(['legL', 'legR', 'body', 'armL', 'armR'].every(k => r.parts[k]),
+    'у рыцаря те же 5 пивотов — вся анимация совместима');
+  ok(!!r.tip, 'метка острия меча на месте (по ней считаются попадания)');
+  let nanCol = 0, tris = 0;
+  for (const k of Object.keys(r.parts)) {
+    const g = r.parts[k].children[0].geometry;
+    const col = g.attributes.color.array;
+    for (let i = 0; i < col.length; i++) if (!Number.isFinite(col[i])) nanCol++;
+    tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+  }
+  ok(nanCol === 0, 'в цветах брони нет NaN — палитра задана полностью');
+  const need = ['tunic', 'shoulder', 'belt', 'pants', 'boots', 'cloak', 'eyes', 'metal',
+    'blade', 'grip', 'shield', 'helm', 'crest', 'trim', 'tabard', 'fur'];
+  ok(need.every(k => typeof SKINS[k === 'knight' ? 'knight' : k] === 'number' ? true : typeof SKINS.knight[k] === 'number'),
+    'палитра рыцаря полная', `${need.length} цветов из референса`);
+  ok(tris > 400 && tris < 2200, 'рыцарь детальнее прежнего северянина, но всё ещё дёшев',
+    `${tris} треугольников на фигуру`);
+}
 ok(finite(game.player.pos.y) && game.player.pos.y > WORLD.water, 'игрок стоит на суше',
   `y=${game.player.pos.y.toFixed(2)}`);
 

@@ -21,7 +21,7 @@ const WORLD_GRAVITY_SOFT = -9;
 export class Player {
   constructor(game) {
     this.game = game;
-    this.rig = new Rig('nord', { colors: SKINS.nord, shield: true, scale: 1 });
+    this.rig = new Rig('knight', { colors: SKINS.knight, shield: true, scale: 1 });
     this.rig.root.name = 'player';
     game.scene.add(this.rig.root);
 
