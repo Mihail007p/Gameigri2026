@@ -15,13 +15,12 @@ const pushed = (() => {
 
 const jsd = `https://cdn.jsdelivr.net/gh/${REPO}@${branch}`;
 console.log('\n=== Ссылки для теста на телефоне (Chrome, горизонтально) ===\n');
-console.log('Ветка (свежая версия, кэш до 12 ч):');
+console.log('ГЛАВНАЯ — по SHA коммита: всегда ровно эта версия, кэш CDN не мешает');
+console.log(`  https://raw.githack.com/${REPO}/${sha}/play.html   (один клик «Open the page»)`);
+console.log(`  https://cdn.jsdelivr.net/gh/${REPO}@${sha}/play.html   (без предупреждений)`);
+console.log('\nПо ветке — короче, но CDN может отдать старую версию (кэш до 12 ч):');
 console.log(`  ${jsd}/play.html`);
-console.log('\nКоммит (фиксированная версия, кэш навсегда):');
-console.log(`  https://cdn.jsdelivr.net/gh/${REPO}@${sha}/play.html`);
-console.log('\nЗапасной CDN (показывает предупреждение, нужен клик «Open the page»):');
 console.log(`  https://raw.githack.com/${REPO}/${branch}/play.html`);
-console.log('\nЗапасной CDN (без страницы-предупреждения):');
 console.log(`  https://cdn.statically.io/gh/${REPO}/${branch}/play.html`);
 console.log('\nСброс кэша jsDelivr (открыть в браузере после пуша):');
 for (const f of ['play.html', 'prototype/style.css', 'prototype/src/main.js']) {
