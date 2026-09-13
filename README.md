@@ -30,12 +30,20 @@ https://cdn.jsdelivr.net/gh/Mihail007p/Gameigri2026@<SHA-коммита>/play.ht
 > кэш сбрасывается запросом `https://purge.jsdelivr.net/gh/Mihail007p/Gameigri2026@arena/01a098e5-gameigri2026/<файл>`.
 > Если видишь старую версию — открой ссылку на конкретный коммит (SHA берётся из `git log`).
 
-Запасной вариант (тот же контент, но перед игрой показывает страницу-предупреждение
-и требует один клик «Open the page»):
+Запасные CDN (тот же контент, если первый не открывается):
 
 ```
+# statically.io — без страницы-предупреждения
+https://cdn.statically.io/gh/Mihail007p/Gameigri2026/arena/01a098e5-gameigri2026/prototype/index.html
+
+# raw.githack — показывает предупреждение, нужен один клик «Open the page»
 https://raw.githack.com/Mihail007p/Gameigri2026/arena/01a098e5-gameigri2026/prototype/index.html
 ```
+
+Если вместо игры виден **текст исходного кода** — значит CDN отдал `.html` как
+`text/plain`; просто открой ссылку другого CDN. Если игра зависла на
+«Генерация мира…» дольше 15 с — на экране появится подсказка с причинами
+(сторож в `index.html`), её удобно сфотографировать.
 
 Почему это работает без сервера и без интернета у разработчика: в `prototype/vendor/`
 лежит сам three.js (2.1 МБ), поэтому игре не нужны ни npm, ни сборщик, ни сторонние CDN
