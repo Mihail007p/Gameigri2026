@@ -19,17 +19,17 @@ export const QUALITY = {
   low: {
     name: 'low', renderScale: 0.55, shadows: false, shadowSize: 512,
     propRadius: 70, grassRadius: 26, viewChunks: 2, maxEnemies: 4,
-    fogFar: 95, stars: false, waterWave: false, fpsTarget: 30,
+    fogFar: 95, stars: false, waterWave: false, fpsTarget: 30, precip: 0.45,
   },
   medium: {
     name: 'medium', renderScale: 0.72, shadows: true, shadowSize: 1024,
     propRadius: 96, grassRadius: 38, viewChunks: 2, maxEnemies: 7,
-    fogFar: 108, stars: true, waterWave: true, fpsTarget: 30,
+    fogFar: 108, stars: true, waterWave: true, fpsTarget: 30, precip: 0.75,
   },
   high: {
     name: 'high', renderScale: 1.0, shadows: true, shadowSize: 1536,
     propRadius: 140, grassRadius: 50, viewChunks: 3, maxEnemies: 10,
-    fogFar: 150, stars: true, waterWave: true, fpsTarget: 45,
+    fogFar: 150, stars: true, waterWave: true, fpsTarget: 45, precip: 1.0,
   },
 };
 
@@ -38,7 +38,7 @@ export const GAME = {
   startHour: 7.2,
   autosaveSec: 30,
   gravity: -22,
-  version: '0.2.0',
+  version: '0.3.0',
   saveKey: 'severny_kray_save_v1',
 };
 
@@ -168,3 +168,52 @@ export const NIGHT = {
   warnAt: 0.45,      // при какой «ночности» показать предупреждение игроку
   clearAt: 0.2,      // ниже этого значения предупреждение можно показать снова
 };
+
+/**
+ * ПОГОДА. Каждый пресет — набор множителей, которые sky.js применяет к небу и туману,
+ * а enemies.js — к опасности (threat). Значения плавно смешиваются между собой,
+ * поэтому смена погоды занимает WEATHER.fade секунд, а не щёлкает мгновенно.
+ *   fogMul    — множитель дальности тумана (метель = видно 30 м вместо 108)
+ *   sunMul    — яркость солнца (в метель его почти нет)
+ *   hemiMul   — подсветка неба: в пасмурную погоду тени светлее
+ *   starMul   — видимость звёзд
+ *   whiteout  — насколько всё белёсое (0 = чисто, 1 = молочная пелена)
+ *   threat    — добавка к ночной опасности: в метель твари злее и смелее
+ *   snow      — 0/1: идёт ли снег
+ *   wind      — 0..1: сила ветра (дрейф снега, свист в звуке)
+ *   speedMul  — множитель скорости игрока (в метель идти тяжелее)
+ *   weight    — относительная вероятность при выборе следующей погоды
+ */
+export const WEATHER = {
+  clear: {
+    id: 'clear', name: 'Ясно', icon: '☀', weight: 44, minSec: 100, maxSec: 240,
+    fogMul: 1.0, sunMul: 1.0, hemiMul: 1.0, starMul: 1.0, whiteout: 0.0,
+    threat: 0.0, snow: 0, wind: 0.0, speedMul: 1.0,
+  },
+  overcast: {
+    id: 'overcast', name: 'Пасмурно', icon: '☁', weight: 22, minSec: 80, maxSec: 180,
+    fogMul: 0.86, sunMul: 0.6, hemiMul: 1.06, starMul: 0.12, whiteout: 0.2,
+    threat: 0.05, snow: 0, wind: 0.25, speedMul: 1.0,
+  },
+  fog: {
+    id: 'fog', name: 'Туман', icon: '🌫', weight: 12, minSec: 60, maxSec: 130,
+    fogMul: 0.44, sunMul: 0.5, hemiMul: 1.1, starMul: 0.0, whiteout: 0.45,
+    threat: 0.22, snow: 0, wind: 0.08, speedMul: 1.0,
+  },
+  snow: {
+    id: 'snow', name: 'Снег', icon: '❄', weight: 15, minSec: 70, maxSec: 160,
+    fogMul: 0.7, sunMul: 0.68, hemiMul: 1.14, starMul: 0.08, whiteout: 0.32,
+    threat: 0.3, snow: 1, wind: 0.35, speedMul: 0.96,
+  },
+  blizzard: {
+    id: 'blizzard', name: 'Метель', icon: '🌨', weight: 7, minSec: 45, maxSec: 95,
+    fogMul: 0.32, sunMul: 0.4, hemiMul: 1.22, starMul: 0.0, whiteout: 0.66,
+    threat: 0.7, snow: 1, wind: 1.0, speedMul: 0.88,
+  },
+};
+
+/** Сколько секунд длится плавная смена погоды */
+export const WEATHER_FADE = 7;
+
+/** Максимум снежинок в буфере (часть отсекается drawRange под качество) */
+export const PRECIP_MAX = 340;

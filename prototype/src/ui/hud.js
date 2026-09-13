@@ -18,7 +18,7 @@ export class Hud {
       qtList: $('qtList'), prompt: $('prompt'), promptText: $('promptText'), promptKey: $('promptKey'),
       toasts: $('toasts'), vignette: $('vignette'),
       perf: $('perfPanel'), p1: $('perfLine1'), p2: $('perfLine2'), p3: $('perfLine3'),
-      tape: $('compassTape'),
+      tape: $('compassTape'), weather: $('weatherTag'),
       interact: $('btnInteract'),
       shout: $('btnShout'), shoutNext: $('btnShoutNext'),
       shoutCd: $('shoutCd'), shoutName: $('shoutName'), shoutIcon: $('btnShout')?.querySelector('span'),
@@ -81,6 +81,19 @@ export class Hud {
     const deg = (((-camYaw * 180) / Math.PI) % 360 + 360) % 360;
     const w = this.el.tape.parentElement.clientWidth || 300;
     this.el.tape.style.transform = `translateX(${w / 2 - (deg / 360) * COPY - COPY}px)`;
+  }
+
+  /* ───────── погода ───────── */
+  weather(w) {
+    const el = this.el.weather;
+    if (!el || !w) return;
+    const text = w.icon + ' ' + w.name;
+    if (this._wCache !== text) {           // пишем в DOM только при смене погоды
+      this._wCache = text;
+      el.textContent = text;
+      el.classList.remove('hidden');
+      el.classList.toggle('bad', (w.v?.threat ?? 0) > 0.4);
+    }
   }
 
   /* ───────── квесты ───────── */

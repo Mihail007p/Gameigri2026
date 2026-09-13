@@ -44,6 +44,11 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);co
 #compassTape span.card{color:var(--gold);font-weight:700;font-size:12px}
 #compassMark{position:absolute;left:50%;top:0;width:1px;height:100%;background:var(--gold);opacity:.9}
 
+#weatherTag{position:absolute;left:50%;top:calc(30px + var(--safe-t));transform:translateX(-50%);
+  font-size:11px;letter-spacing:.5px;color:#dfe7ee;text-shadow:0 1px 3px #000;pointer-events:none;
+  background:rgba(8,12,16,.42);border:1px solid rgba(255,255,255,.1);border-radius:9px;
+  padding:1px 8px;white-space:nowrap}
+#weatherTag.bad{color:#ffd9c2;border-color:rgba(255,150,110,.3)}
 #questTracker{position:absolute;right:calc(10px + var(--safe-r));top:calc(52px + var(--safe-t));
   width:clamp(140px,20vw,210px);text-align:right;font-size:11px;line-height:1.35}
 .qt-title{color:var(--gold);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;opacity:.8}

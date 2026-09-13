@@ -21,6 +21,7 @@ const KEYS = [
 
 const _c = (hex) => new THREE.Color(hex);
 const WHITE = new THREE.Color(0xffffff);
+const WHITEOUT = new THREE.Color(0xdfe7ee);   // цвет молочной пелены в туман/метель
 const _keys = KEYS.map(k => ({
   h: k[0], zen: _c(k[1]), hor: _c(k[2]), sun: _c(k[3]),
   sunI: k[4], hemiI: k[5], fog: _c(k[6]),
@@ -31,6 +32,9 @@ export class Sky {
     this.scene = scene;
     this.hour = 7.2;
     this.night = 0;          // 0 = день, 1 = глубокая ночь
+    this.threat = 0;         // вклад погоды в опасность (читает enemies.js)
+    this.starMul = 1;        // видимость звёзд (гаснут в облака)
+    this.fogMul = 1;         // множитель дальности тумана
     this.sunDir = new THREE.Vector3(0.3, 1, 0.2);
 
     this.zen = new THREE.Color(); this.hor = new THREE.Color();
@@ -153,8 +157,11 @@ export class Sky {
     return layers;
   }
 
-  /** Обновление по времени суток. camPos — чтобы небо и тени следовали за игроком. */
-  update(hour, camPos, quality) {
+  /**
+   * Обновление по времени суток и погоде. camPos — чтобы небо и тени следовали за игроком.
+   * weather — объект Weather (или его множители); если не передан, погода считается ясной.
+   */
+  update(hour, camPos, quality, weather) {
     this.hour = hour;
     // интерполяция ключевых кадров
     let a = _keys[0], b = _keys[_keys.length - 1];
@@ -166,8 +173,24 @@ export class Sky {
     this.hor.copy(a.hor).lerp(b.hor, t);
     this.sunColor.copy(a.sun).lerp(b.sun, t);
     this.fogColor.copy(a.fog).lerp(b.fog, t);
-    const sunI = lerp(a.sunI, b.sunI, t);
-    const hemiI = lerp(a.hemiI, b.hemiI, t);
+    let sunI = lerp(a.sunI, b.sunI, t);
+    let hemiI = lerp(a.hemiI, b.hemiI, t);
+
+    // погода: меньше солнца, белёсое небо, короче видимость, звёзд не видно
+    const w = weather ? (weather.v || weather) : null;
+    if (w) {
+      sunI *= w.sunMul;
+      hemiI *= w.hemiMul;
+      const wo = clamp(w.whiteout || 0, 0, 1);
+      this.zen.lerp(WHITEOUT, wo * 0.55);
+      this.hor.lerp(WHITEOUT, wo * 0.85);
+      this.fogColor.lerp(WHITEOUT, wo);
+      this.threat = clamp(w.threat || 0, 0, 1);
+      this.starMul = clamp(w.starMul ?? 1, 0, 1);
+      this.fogMul = clamp(w.fogMul ?? 1, 0.2, 1.4);
+    } else {
+      this.threat = 0; this.starMul = 1; this.fogMul = 1;
+    }
 
     // положение солнца: фаза = 0 в 6:00 (восход на востоке), π в 18:00 (закат на западе)
     const phase = ((hour - 6) / 12) * Math.PI;
@@ -190,7 +213,7 @@ export class Sky {
     this.hemi.intensity = hemiI;
 
     // туман и дальность
-    const far = quality.fogFar;
+    const far = quality.fogFar * this.fogMul;
     this.fog.color.copy(this.fogColor);
     this.fog.near = far * 0.28;
     this.fog.far = far;
@@ -199,8 +222,8 @@ export class Sky {
     this.dome.position.copy(camPos);
     this.stars.position.copy(camPos);
     this.stars.rotation.y = hour * 0.06;
-    this.starMat.opacity = this.night * (quality.stars ? 0.95 : 0);
-    this.stars.visible = quality.stars && this.night > 0.02;
+    this.starMat.opacity = this.night * (quality.stars ? 0.95 : 0) * this.starMul;
+    this.stars.visible = quality.stars && this.night > 0.02 && this.starMul > 0.04;
 
     // горы: красим в смесь своего цвета и тумана (дешёвая атмосферная перспектива)
     for (const L of this.mountains) {

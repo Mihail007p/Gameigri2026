@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Северный Край — прототип v0.2</title>
+<title>Северный Край — прототип v0.3</title>
 <!-- ЕДИНСТВЕННАЯ точка входа в игру. Живёт в корне репозитория, чтобы ссылка для
      теста на телефоне была короткой и открывалась БЕЗ цепочки перенаправлений:
        https://raw.githack.com/Mihail007p/Gameigri2026/<ветка>/play.html
@@ -41,6 +41,7 @@
     </div>
 
     <div id="compass"><div id="compassTape"></div><div id="compassMark"></div></div>
+    <div id="weatherTag" class="hidden">☀ Ясно</div>
 
     <div id="questTracker">
       <div class="qt-title">Квесты</div>
@@ -81,7 +82,7 @@
   <div id="loading" class="screen">
     <div class="panel narrow">
       <h1>СЕВЕРНЫЙ КРАЙ</h1>
-      <p class="sub">прототип v0.2 · Tecno Pova Neo 3</p>
+      <p class="sub">прототип v0.3 · Tecno Pova Neo 3</p>
       <div class="loader"><i id="loadBar"></i></div>
       <p id="loadText" class="tiny">Генерация мира…</p>
     </div>
@@ -90,7 +91,7 @@
   <div id="title" class="screen hidden">
     <div class="panel narrow">
       <h1>СЕВЕРНЫЙ КРАЙ</h1>
-      <p class="sub">Skyrim-подобный прототип для слабых Android · крики, стены слов, опасная ночь</p>
+      <p class="sub">Skyrim-подобный прототип для слабых Android · крики, погода, опасная ночь</p>
       <button class="mbtn" id="btnContinue">Продолжить</button>
       <button class="mbtn" id="btnNew">Новая игра</button>
       <button class="mbtn" id="btnSettings">Настройки</button>

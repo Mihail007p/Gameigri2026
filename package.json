@@ -1,13 +1,14 @@
 {
   "name": "severny-kray",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Skyrim-подобная ролевая игра для слабых Android (целевое устройство: Tecno Pova Neo 3). Прототип на Three.js, без сборки.",
   "type": "module",
   "scripts": {
     "start": "node server.mjs 3000",
     "smoke": "node tools/smoke.mjs",
-    "links": "node tools/links.mjs"
+    "links": "node tools/links.mjs",
+    "check": "node tools/checkids.mjs && node tools/harness.mjs"
   },
   "dependencies": {
     "three": "^0.186.0"

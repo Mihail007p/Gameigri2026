@@ -126,8 +126,10 @@ export class Player {
 
     this._running = (m.run || mag > 0.92) && this.st > 1 && !this.blocking && !this.swim
       && this.grounded && this.dashT <= 0;
-    const maxSpeed = this.swim ? P.swimSpeed : this.blocking ? P.walkSpeed * 0.55
-      : this._running ? P.runSpeed : P.walkSpeed;
+    // погода: в глубоком снегу и на ветру шаг короче
+    const wMul = this.game.weather?.v.speedMul ?? 1;
+    const maxSpeed = (this.swim ? P.swimSpeed : this.blocking ? P.walkSpeed * 0.55
+      : this._running ? P.runSpeed : P.walkSpeed) * wMul;
     this.maxSpeed = maxSpeed;
 
     if (mag > 0.01) {

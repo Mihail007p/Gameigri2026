@@ -13,10 +13,12 @@ import { Player } from '../prototype/src/entities/player.js';
 import { EnemyManager, threatOf } from '../prototype/src/entities/enemies.js';
 import { Npc } from '../prototype/src/entities/npc.js';
 import { WordWalls } from '../prototype/src/world/wordwalls.js';
+import { Weather } from '../prototype/src/world/weather.js';
 import { Settings } from '../prototype/src/core/settings.js';
 import { PerfMonitor } from '../prototype/src/core/perf.js';
 import { WORLD, GAME, NPCS, QUESTS, SPAWN_POINTS, PLAYER as PC,
-  SHOUTS, START_WORDS, WORD_WALLS, NIGHT, ENEMIES } from '../prototype/src/config.js';
+  SHOUTS, START_WORDS, WORD_WALLS, NIGHT, ENEMIES,
+  WEATHER, PRECIP_MAX, QUALITY } from '../prototype/src/config.js';
 
 let fails = 0, checks = 0;
 const ok = (cond, msg, extra = '') => {
@@ -520,6 +522,169 @@ sec('Крики и стены слов');
   ok(p.words.length === START_WORDS.length && p.word === START_WORDS[0],
     'старый сейв без слов получает стартовый набор');
   sky.update(12, new THREE.Vector3(0, 10, 0), Settings.q);
+}
+
+/* ═══ 6c. погода ═══ */
+sec('Погода');
+{
+  const cam = new THREE.Vector3(WORLD.spawn.x, 8, WORLD.spawn.z);
+  const weather = new Weather(scene, 123);
+  game.weather = weather;
+  const sky2 = game.sky;
+  const setW = (id) => { weather.cur = WEATHER[id]; weather.prev = WEATHER[id]; weather.mix = 1; weather._blend(); };
+
+  /* --- конфиг --- */
+  const ids = Object.keys(WEATHER);
+  ok(ids.length === 5, 'пять состояний погоды', ids.join(', '));
+  ok(ids.every(k => {
+    const w = WEATHER[k];
+    return w.weight > 0 && w.minSec > 0 && w.maxSec >= w.minSec && w.fogMul > 0 && w.sunMul > 0
+      && Number.isFinite(w.threat) && Number.isFinite(w.speedMul) && Number.isFinite(w.wind);
+  }), 'все пресеты заполнены и конечны');
+  ok(WEATHER.blizzard.fogMul < WEATHER.snow.fogMul && WEATHER.snow.fogMul < WEATHER.clear.fogMul,
+    'видимость падает: ясно > снег > метель',
+    `×${WEATHER.clear.fogMul} > ×${WEATHER.snow.fogMul} > ×${WEATHER.blizzard.fogMul}`);
+  ok(WEATHER.blizzard.threat > WEATHER.snow.threat && WEATHER.clear.threat === 0,
+    'метель опаснее снега, ясная погода безопасна');
+  ok(WEATHER.clear.snow === 0 && WEATHER.fog.snow === 0 && WEATHER.snow.snow === 1 && WEATHER.blizzard.snow === 1,
+    'снег идёт только в снеге и в метель');
+  ok(WEATHER.blizzard.speedMul < WEATHER.snow.speedMul && WEATHER.snow.speedMul < WEATHER.clear.speedMul,
+    'в непогоду игрок вязнет', `×${WEATHER.clear.speedMul} → ×${WEATHER.blizzard.speedMul}`);
+  ok(Object.values(QUALITY).every(q => q.precip > 0 && q.precip <= 1),
+    'в каждом пресете качества есть доля снежинок');
+  ok(QUALITY.low.precip < QUALITY.medium.precip && QUALITY.medium.precip < QUALITY.high.precip,
+    'низкое качество = меньше снежинок', `${QUALITY.low.precip}/${QUALITY.medium.precip}/${QUALITY.high.precip}`);
+
+  /* --- старт и буфер снега --- */
+  ok(weather.id === 'clear' && weather.mix === 1 && weather.v.snowAmt === 0, 'игра начинается в ясную погоду');
+  weather.update(dt, cam, QUALITY.high);
+  ok(weather.snowCount === 0 && weather.points.visible === false,
+    'в ясную погоду снег не рисуется — ноль лишних draw call');
+  const geo = weather.geo;
+  ok(geo.attributes.position.count === PRECIP_MAX, 'в буфере ровно PRECIP_MAX снежинок', `${PRECIP_MAX}`);
+  ok(!!geo.attributes.aSeed && !!geo.attributes.aSize,
+    'анимация снега на GPU: есть атрибуты aSeed и aSize');
+  let posBad = 0;
+  const posArr = geo.attributes.position.array;
+  for (let i = 0; i < posArr.length; i++) if (!Number.isFinite(posArr[i]) || posArr[i] < 0) posBad++;
+  ok(posBad === 0, 'позиции снежинок конечны и лежат в коробке');
+
+  /* --- метель --- */
+  ok(weather.set('blizzard') && weather.mix === 0, 'погоду можно переключить принудительно');
+  for (let i = 0; i < 260; i++) weather.update(dt, cam, QUALITY.high);
+  ok(weather.mix === 1, 'смена погоды доходит до конца', `mix=${weather.mix}`);
+  ok(weather.snowCount === PRECIP_MAX, 'в метель на высоком качестве рисуем весь буфер', `${weather.snowCount}`);
+  ok(weather.points.visible && weather.uniforms.uOpacity.value > 0.5,
+    'метель видна', `opacity ${weather.uniforms.uOpacity.value.toFixed(2)}`);
+  ok(Math.abs(weather.uniforms.uWindX.value) + Math.abs(weather.uniforms.uWindZ.value) > 1,
+    'в метель дует ветер', `(${weather.uniforms.uWindX.value.toFixed(1)}, ${weather.uniforms.uWindZ.value.toFixed(1)})`);
+  const blizzardCount = weather.snowCount;
+
+  /* --- качество режет снег --- */
+  weather.set('snow');
+  for (let i = 0; i < 260; i++) weather.update(dt, cam, QUALITY.low);
+  ok(weather.snowCount === Math.round(PRECIP_MAX * QUALITY.low.precip) && weather.snowCount < blizzardCount,
+    'на низком качестве снежинок меньше', `${weather.snowCount} против ${blizzardCount}`);
+
+  /* --- никаких NaN за 20 секунд любой погоды --- */
+  weather.set('fog');
+  let nan = 0;
+  for (let i = 0; i < 600; i++) {
+    weather.update(dt, cam, QUALITY.medium);
+    for (const k of ['uTime', 'uFall', 'uWindX', 'uWindZ', 'uOpacity', 'uScale']) {
+      if (!Number.isFinite(weather.uniforms[k].value)) nan++;
+    }
+    for (const k of Object.keys(weather.v)) if (!Number.isFinite(weather.v[k])) nan++;
+    if (!Number.isFinite(weather.timer) || !Number.isFinite(weather.mix)) nan++;
+  }
+  ok(nan === 0, '20 секунд тумана без NaN в униформах и множителях');
+
+  /* --- плавное смешивание --- */
+  weather.cur = WEATHER.blizzard; weather.prev = WEATHER.clear; weather.mix = 0.5; weather._blend();
+  const midFog = weather.v.fogMul;
+  ok(midFog > WEATHER.blizzard.fogMul && midFog < WEATHER.clear.fogMul,
+    'погода смешивается плавно, а не щёлкает', `fogMul ${midFog.toFixed(2)} между ${WEATHER.blizzard.fogMul} и ${WEATHER.clear.fogMul}`);
+  ok(weather.v.snowAmt > 0.4 && weather.v.snowAmt < 0.6, 'снег нарастает постепенно', weather.v.snowAmt.toFixed(2));
+
+  /* --- небо реагирует на погоду --- */
+  setW('clear');
+  sky2.update(12, cam, QUALITY.medium, weather);
+  const sunClear = sky2.sun.intensity, fogClear = sky2.fog.far;
+  setW('blizzard');
+  sky2.update(12, cam, QUALITY.medium, weather);
+  ok(sky2.sun.intensity < sunClear * 0.6, 'в метель солнца почти нет',
+    `${sunClear.toFixed(2)} → ${sky2.sun.intensity.toFixed(2)}`);
+  ok(sky2.fog.far < fogClear * 0.4, 'в метель видимость падает сильнее, чем вдвое',
+    `${fogClear.toFixed(0)} → ${sky2.fog.far.toFixed(0)} м`);
+  ok(sky2.threat > 0.5, 'метель добавляет угрозы (её читают враги)', sky2.threat.toFixed(2));
+  sky2.update(1, cam, QUALITY.medium, weather);
+  ok(sky2.starMat.opacity === 0 && sky2.stars.visible === false, 'в метель звёзд не видно');
+  // старый вызов без погоды обязан работать как раньше
+  sky2.update(12, cam, QUALITY.medium);
+  ok(sky2.threat === 0 && Math.abs(sky2.fog.far - QUALITY.medium.fogFar) < 0.001,
+    'без аргумента weather небо ведёт себя как раньше', `туман ${sky2.fog.far}`);
+
+  /* --- враги в непогоду опаснее --- */
+  setW('clear');
+  sky2.update(12, cam, QUALITY.medium, weather);
+  const thClearDay = threatOf(game);
+  ok(thClearDay < 0.05, 'ясным днём угрозы нет', thClearDay.toFixed(2));
+  setW('blizzard');
+  sky2.update(12, cam, QUALITY.medium, weather);
+  const thBlizDay = threatOf(game);
+  ok(thBlizDay > 0.3, 'днём в метель твари смелеют', thBlizDay.toFixed(2));
+  sky2.update(1, cam, QUALITY.medium, weather);
+  ok(threatOf(game) > thBlizDay, 'ночь плюс метель — хуже всего', threatOf(game).toFixed(2));
+  const e4 = game.enemies.list[7];
+  e4.dead = false; e4.active = true; e4.hp = e4.hpMax; e4.stun = 0; e4.slow = 0;
+  e4.pos.set(WORLD.spawn.x + 5, heightAt(WORLD.spawn.x + 5, WORLD.spawn.z), WORLD.spawn.z);
+  game.player.pos.set(WORLD.spawn.x, heightAt(WORLD.spawn.x, WORLD.spawn.z), WORLD.spawn.z);
+  e4.update(dt, game.player);
+  ok(e4.dmgNow > ENEMIES[e4.type].dmg, 'в метель ночью враг бьёт больнее',
+    `${ENEMIES[e4.type].dmg} → ${e4.dmgNow}`);
+
+  /* --- скорость игрока --- */
+  const pl = game.player;
+  pl.dead = false; pl.blocking = false; pl.dashT = 0; pl.st = pl.stMax;
+  pl.pos.set(WORLD.spawn.x, heightAt(WORLD.spawn.x, WORLD.spawn.z), WORLD.spawn.z);
+  pl.vel.set(0, 0, 0);
+  inputStub.m.x = 0; inputStub.m.y = 1; inputStub.held.run = true;
+  setW('clear'); pl.update(dt, inputStub);
+  const spClear = pl.maxSpeed;
+  setW('blizzard'); pl.update(dt, inputStub);
+  const spBliz = pl.maxSpeed;
+  ok(spBliz < spClear, 'в метель игрок бежит медленнее', `${spClear.toFixed(2)} → ${spBliz.toFixed(2)} м/с`);
+  inputStub.m.y = 0; inputStub.held.run = false;
+
+  /* --- смена по таймеру и сохранение --- */
+  setW('clear');
+  weather.timer = 0.01;
+  let announced = 0;
+  weather.onStateChange = () => { announced++; };
+  for (let i = 0; i < 10 && announced === 0; i++) weather.update(dt, cam, QUALITY.medium);
+  ok(announced === 1 && weather.id !== 'clear', 'погода меняется сама по таймеру', `ясно → ${weather.id}`);
+  ok(weather.timer > 0, 'после смены выставлен новый таймер', `${weather.timer.toFixed(0)} с`);
+  const changes0 = weather.changes;
+  for (let i = 0; i < 12000; i++) weather.update(dt, cam, QUALITY.medium);
+  ok(weather.changes >= changes0 + 2, 'за ~7 минут игрового времени погода успевает смениться несколько раз',
+    `${weather.changes - changes0} смен`);
+  weather.onStateChange = null;
+
+  weather.set('snow');
+  const wSave = JSON.parse(JSON.stringify(weather.serialize()));
+  ok(wSave.id === weather.id && wSave.timer > 0, 'погода пишется в сейв', JSON.stringify(wSave));
+  weather.reset();
+  ok(weather.id === 'clear' && weather.mix === 1, 'сброс возвращает ясную погоду');
+  weather.restore(wSave);
+  ok(weather.id === 'snow' && weather.timer > 0, 'погода восстанавливается из сейва',
+    `${weather.id}, таймер ${weather.timer} с`);
+  weather.restore({ id: 'несуществующая' });
+  weather.restore(null);
+  ok(weather.id === 'snow', 'мусор и пустота в сейве не ломают погоду');
+  weather.reset();
+  weather.update(dt, cam, QUALITY.medium);        // снег выключен — сцена снова «ясная»
+  ok(weather.points.visible === false && weather.snowCount === 0, 'после сброса снег не рисуется');
+  sky2.update(12, cam, QUALITY.medium, weather);
 }
 
 /* ═══ 7. квест ═══ */

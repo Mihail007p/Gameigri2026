@@ -110,6 +110,27 @@ class Sfx {
     this.noise(1.4, { freq: 90, gain: 0.12, q: 0.3, type: 'lowpass' });
   }
 
+  /**
+   * Ветер: уровень 0..1 (метель — 1). Длинный шумовой «порыв» с низким фильтром.
+   * Вызывается из main.js примерно раз в 3 с, поэтому не плодит узлы WebAudio.
+   */
+  wind(level = 0) {
+    if (!this.on || level <= 0.02) return;
+    this.throttled('wind', 2200, () => {
+      const g = 0.02 + level * 0.11;
+      this.noise(1.6 + level * 1.8, { freq: 180 + level * 260, gain: g, q: 0.35, type: 'lowpass' });
+      if (level > 0.6) this.noise(0.9, { freq: 900, to: 320, gain: g * 0.5, q: 0.5 });
+    });
+  }
+
+  /** Раскат грома/гул метели при резкой смене погоды */
+  gust() {
+    this.throttled('gust', 1500, () => {
+      this.noise(1.1, { freq: 420, to: 120, gain: 0.16, q: 0.4 });
+      this.tone(90, 0.9, { type: 'sine', gain: 0.07, to: 55 });
+    });
+  }
+
   ambient() {
     // низкий «ветер»: редкий шумовой всплеск с медленным фильтром
     if (!this.on) return;

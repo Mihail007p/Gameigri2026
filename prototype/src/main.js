@@ -10,10 +10,11 @@ import { Sky } from './world/sky.js';
 import { Terrain } from './world/terrain.js';
 import { Props } from './world/props.js';
 import { Water } from './world/water.js';
+import { Weather } from './world/weather.js';
 import { Structures } from './world/structures.js';
 import { Fx } from './entities/fx.js';
 import { Player } from './entities/player.js';
-import { EnemyManager } from './entities/enemies.js';
+import { EnemyManager, threatOf } from './entities/enemies.js';
 import { Npc } from './entities/npc.js';
 import { WordWalls } from './world/wordwalls.js';
 import { GAME, WORLD, NPCS, QUESTS, PLAYER as PC, NIGHT } from './config.js';
@@ -74,8 +75,11 @@ window.__diag = () => {
     `крик: ${g.player?.shout?.name ?? '-'} · слов ${g.player?.words.length ?? 0} · кд ${(g.player?.shoutCd ?? 0).toFixed(1)}с` +
     ` · рывок ${(g.player?.dashT ?? 0).toFixed(2)}с · стены слов ${(g.wordWalls?.serialize() || []).filter(Boolean).length}/` +
     `${g.wordWalls?.list.length ?? 0}`,
-    `ночная угроза: урон врагов ×${(1 + (g.sky?.night ?? 0) * NIGHT.dmgMul).toFixed(2)},` +
-    ` радиус обзора ×${(1 + (g.sky?.night ?? 0) * NIGHT.detectMul).toFixed(2)}`,
+    `погода: ${g.weather?.name ?? '-'} (${g.weather?.id ?? '-'}) · смена через ${(g.weather?.timer ?? 0).toFixed(0)}с` +
+    ` · снежинок ${g.weather?.snowCount ?? 0} · туман ×${(g.weather?.v.fogMul ?? 1).toFixed(2)}` +
+    ` · ветер ${(g.weather?.v.wind ?? 0).toFixed(2)} · скорость игрока ×${(g.weather?.v.speedMul ?? 1).toFixed(2)}`,
+    `ночная угроза ${threatOf(g).toFixed(2)}: урон врагов ×${(1 + threatOf(g) * NIGHT.dmgMul).toFixed(2)},` +
+    ` радиус обзора ×${(1 + threatOf(g) * NIGHT.detectMul).toFixed(2)}`,
   ];
   const c = r.getContext();
   const d = c.getExtension('WEBGL_debug_renderer_info');
@@ -177,8 +181,15 @@ async function buildWorld() {
   hud.loading(0.08, 'Профиль устройства…');
   await nextFrame();
 
-  hud.loading(0.18, 'Небо и солнце…');
+  hud.loading(0.18, 'Небо, солнце, погода…');
   game.sky = new Sky(scene);
+  game.weather = new Weather(scene, WORLD.seed % 977);
+  game.weather.onStateChange = () => {
+    sfx.gust();
+    if (game.state === 'play') hud.toast(game.weather.announce, game.weather.v.threat > 0.4 ? 'bad' : '');
+  };
+  game.windT = 0;
+  game.weather.update(0.016, game.player?.pos ?? new THREE.Vector3(WORLD.spawn.x, 6, WORLD.spawn.z), Settings.q);
   await nextFrame();
 
   hud.loading(0.34, 'Рельеф…');
@@ -206,7 +217,8 @@ async function buildWorld() {
 
   hud.loading(0.92, 'Свет и тени…');
   applyQuality();
-  game.sky.update(game.hour, game.player.pos, Settings.q);
+  game.weather.update(0.016, game.player.pos, Settings.q);
+  game.sky.update(game.hour, game.player.pos, Settings.q, game.weather);
   game.structures.update(0.016, game.sky.night, game.sky.lightLevel);
   await nextFrame();
 
@@ -384,6 +396,7 @@ function saveGame(silent = false) {
     chests: game.structures.chests.map(c => ({ id: c.id, open: c.open, looted: c.looted })),
     quest: quest.serialize(),
     walls: game.wordWalls.serialize(),
+    weather: game.weather.serialize(),
     hour: +game.hour.toFixed(3),
     time: Math.round(game.time),
   };
@@ -406,6 +419,7 @@ function loadGame() {
   }
   quest.restore(s.quest);
   game.wordWalls.restore(s.walls);
+  game.weather.restore(s.weather);
   game.hour = s.hour ?? GAME.startHour;
   game.time = s.time ?? 0;
   return true;
@@ -423,6 +437,7 @@ function newGame() {
   for (const c of game.structures.chests) { c.looted = false; c.open = false; c.lidPivot.rotation.x = 0; }
   quest.restore(null);
   game.wordWalls.reset();
+  game.weather.reset();
   game.hour = GAME.startHour;
   game.time = 0;
 }
@@ -509,7 +524,8 @@ function loop(now) {
     game.titleT += dt;
     game.hour = (game.hour + dt * 0.9) % 24;
     titleCamera();
-    game.sky?.update(game.hour, camera.position, Settings.q);
+    game.weather?.update(dt, camera.position, Settings.q);
+    game.sky?.update(game.hour, camera.position, Settings.q, game.weather);
     game.structures?.update(dt, game.sky.night, game.sky.lightLevel);
     game.water?.update(dt, game.sky, Settings.q);
     game.props?.applyNight(game.sky.night);
@@ -554,7 +570,8 @@ function update(dt) {
   game.terrain.update(p.pos.x, p.pos.z, q.viewChunks);
   game.props.update(dt, p.pos.x, p.pos.z, q);
 
-  game.sky.update(game.hour, camera.position, q);
+  game.weather.update(dt, camera.position, q);
+  game.sky.update(game.hour, camera.position, q, game.weather);
   game.water.update(dt, game.sky, q);
   game.structures.update(dt, game.sky.night, game.sky.lightLevel);
   game.props.applyNight(game.sky.night);
@@ -563,10 +580,12 @@ function update(dt) {
 
   // ночь делает мертвецов злее — предупреждаем один раз за ночь
   const night = game.sky.night;
-  if (night > NIGHT.warnAt && !game.nightWarned) {
+  const threat = threatOf(game);
+  if (threat > NIGHT.warnAt && !game.nightWarned) {
     game.nightWarned = true;
-    hud.toast('Смеркается. Твари видят дальше и бьют больнее', 'bad');
-  } else if (night < NIGHT.clearAt) {
+    hud.toast(night > 0.4 ? 'Смеркается. Твари видят дальше и бьют больнее'
+      : 'Непогода: твари видят дальше и бьют больнее', 'bad');
+  } else if (threat < NIGHT.clearAt) {
     game.nightWarned = false;
   }
 
@@ -579,6 +598,11 @@ function update(dt) {
   hud.compass(p.camYaw);
   hud.quests(quest.tracker());
   hud.shoutState(p);
+  hud.weather(game.weather);
+
+  // свист ветра: раз в 3 секунды, громкость от силы непогоды
+  game.windT += dt;
+  if (game.windT > 3) { game.windT = 0; sfx.wind(game.weather.v.wind); }
 
   // автосейв
   game.autosave += dt;
@@ -595,7 +619,8 @@ function updateSlow(dt) {
   if (input.consume('bag') && game.state === 'inv') { hud.hideAll(); game.state = 'play'; }
   const p = game.player;
   p.updateCamera(dt);
-  game.sky.update(game.hour, camera.position, Settings.q);
+  game.weather.update(dt, camera.position, Settings.q);
+  game.sky.update(game.hour, camera.position, Settings.q, game.weather);
   game.water.update(dt, game.sky, Settings.q);
   game.structures.update(dt, game.sky.night, game.sky.lightLevel);
   game.wordWalls.update(dt, game.sky.night);

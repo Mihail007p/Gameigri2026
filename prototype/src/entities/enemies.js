@@ -23,7 +23,7 @@ export function threatOf(game) {
   if (!sky) return 0;
   const night = clamp(sky.night || 0, 0, 1);
   const weather = clamp(sky.threat || 0, 0, 1);   // метель тоже добавляет опасности
-  return clamp(night * 0.85 + weather * 0.35, 0, 1);
+  return clamp(night * 0.85 + weather * 0.45, 0, 1);
 }
 
 class Enemy {
