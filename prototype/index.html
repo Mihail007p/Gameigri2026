@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Северный Край — прототип v0.1</title>
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+
+  <!-- ══════════════ HUD (не перехватывает касания) ══════════════ -->
+  <div id="hud" class="hidden">
+    <div id="vitals">
+      <div class="row"><span class="lvl" id="hudLevel">1</span>
+        <div class="bars">
+          <div class="bar hp"><i id="barHp"></i><b id="txtHp">100/100</b></div>
+          <div class="bar st"><i id="barSt"></i></div>
+          <div class="bar xp"><i id="barXp"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="compass"><div id="compassTape"></div><div id="compassMark"></div></div>
+
+    <div id="questTracker">
+      <div class="qt-title">Квесты</div>
+      <div id="qtList"></div>
+    </div>
+
+    <div id="perfPanel">
+      <div id="perfLine1">—</div>
+      <div id="perfLine2">—</div>
+      <div id="perfLine3">—</div>
+    </div>
+
+    <div id="prompt" class="hidden"><span id="promptKey">✋</span><span id="promptText"></span></div>
+    <div id="toasts"></div>
+    <div id="vignette"></div>
+    <div id="crosshair"></div>
+    <div id="interactDot" class="hidden"></div>
+  </div>
+
+  <!-- ══════════════ СЕНСОРНОЕ УПРАВЛЕНИЕ ══════════════ -->
+  <div id="touch" class="hidden">
+    <div id="zoneMove"></div>
+    <div id="zoneLook"></div>
+    <div id="stick" class="hidden"><div id="knob"></div></div>
+
+    <button class="tbtn" id="btnAttack" data-label="⚔"><span>⚔</span></button>
+    <button class="tbtn" id="btnBlock"  data-label="🛡"><span>🛡</span></button>
+    <button class="tbtn" id="btnJump"   data-label="▲"><span>▲</span></button>
+    <button class="tbtn" id="btnInteract" data-label="✋"><span>✋</span></button>
+    <button class="tbtn small" id="btnBag"  data-label="🎒"><span>🎒</span></button>
+    <button class="tbtn small" id="btnMenu" data-label="☰"><span>☰</span></button>
+  </div>
+
+  <!-- ══════════════ ЭКРАНЫ ══════════════ -->
+  <div id="loading" class="screen">
+    <div class="panel narrow">
+      <h1>СЕВЕРНЫЙ КРАЙ</h1>
+      <p class="sub">прототип v0.1 · Tecno Pova Neo 3</p>
+      <div class="loader"><i id="loadBar"></i></div>
+      <p id="loadText" class="tiny">Генерация мира…</p>
+    </div>
+  </div>
+
+  <div id="title" class="screen hidden">
+    <div class="panel narrow">
+      <h1>СЕВЕРНЫЙ КРАЙ</h1>
+      <p class="sub">Skyrim-подобный прототип для слабых Android</p>
+      <button class="mbtn" id="btnContinue">Продолжить</button>
+      <button class="mbtn" id="btnNew">Новая игра</button>
+      <button class="mbtn" id="btnSettings">Настройки</button>
+      <p class="tiny hint">Телефон: поверни горизонтально.<br>ПК: WASD + мышь, ЛКМ — удар, ПКМ — блок, E — действие, Esc — меню.</p>
+    </div>
+  </div>
+
+  <div id="settings" class="screen hidden">
+    <div class="panel">
+      <h2>Настройки</h2>
+      <div class="srow"><label>Качество</label>
+        <div class="seg" id="segQuality">
+          <button data-q="auto">Авто</button><button data-q="low">Низкое</button>
+          <button data-q="medium">Среднее</button><button data-q="high">Высокое</button>
+        </div>
+      </div>
+      <div class="srow"><label>Чувствительность камеры</label>
+        <input type="range" id="rngSens" min="30" max="250" value="100">
+        <output id="outSens">1.00</output>
+      </div>
+      <div class="srow"><label>Инверсия по вертикали</label>
+        <div class="seg" id="segInvert"><button data-v="0">Выкл</button><button data-v="1">Вкл</button></div>
+      </div>
+      <div class="srow"><label>Звук</label>
+        <div class="seg" id="segSound"><button data-v="1">Вкл</button><button data-v="0">Выкл</button></div>
+      </div>
+      <div class="srow"><label>Панель FPS</label>
+        <div class="seg" id="segPerf"><button data-v="1">Вкл</button><button data-v="0">Выкл</button></div>
+      </div>
+      <p class="tiny" id="deviceInfo">—</p>
+      <button class="mbtn" id="btnSettingsClose">Закрыть</button>
+    </div>
+  </div>
+
+  <div id="pause" class="screen hidden">
+    <div class="panel narrow">
+      <h2>Пауза</h2>
+      <button class="mbtn" id="btnResume">Продолжить</button>
+      <button class="mbtn" id="btnSave">Сохранить</button>
+      <button class="mbtn" id="btnPauseSettings">Настройки</button>
+      <button class="mbtn danger" id="btnToTitle">В главное меню</button>
+      <p class="tiny" id="pauseStats">—</p>
+    </div>
+  </div>
+
+  <div id="dialogue" class="screen hidden">
+    <div class="panel wide">
+      <h3 id="dlgName">—</h3>
+      <p id="dlgText">—</p>
+      <div id="dlgOptions"></div>
+    </div>
+  </div>
+
+  <div id="inventory" class="screen hidden">
+    <div class="panel wide">
+      <h3>Сумка</h3>
+      <div class="inv-grid">
+        <div><span class="tiny">Золото</span><div class="big" id="invGold">0</div></div>
+        <div><span class="tiny">Уровень</span><div class="big" id="invLevel">1</div></div>
+        <div><span class="tiny">Урон</span><div class="big" id="invDmg">—</div></div>
+        <div><span class="tiny">Убито</span><div class="big" id="invKills">0</div></div>
+      </div>
+      <div id="invList"></div>
+      <button class="mbtn" id="btnInvClose">Закрыть</button>
+    </div>
+  </div>
+
+  <div id="death" class="screen hidden">
+    <div class="panel narrow">
+      <h2 class="dead">ТЫ ПАЛ</h2>
+      <p class="sub">Север не прощает ошибок.</p>
+      <button class="mbtn" id="btnRespawn">Загрузить сохранение</button>
+    </div>
+  </div>
+
+  <div id="rotateHint" class="hidden">
+    <div>↻<br>Поверни телефон горизонтально</div>
+  </div>
+</div>
+
+<!-- Если что-то упадёт на телефоне — ошибка покажется на экране, её можно сфотографировать -->
+<div id="fatal" style="display:none;position:fixed;inset:0;z-index:99;background:#1a0808;color:#ffb4b4;
+  font:12px/1.5 ui-monospace,Menlo,monospace;padding:14px;overflow:auto;white-space:pre-wrap"></div>
+<script>
+(function () {
+  function fatal(title, msg) {
+    var el = document.getElementById('fatal');
+    el.style.display = 'block';
+    el.textContent += title + ': ' + msg + '\n\n';
+    var lt = document.getElementById('loadText');
+    if (lt) lt.textContent = 'Ошибка: ' + msg;
+  }
+  window.addEventListener('error', function (e) {
+    fatal('Ошибка', (e.message || '') + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno);
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    fatal('Promise', (e.reason && (e.reason.message || e.reason)) + '');
+  });
+  // быстрая проверка WebGL до загрузки движка
+  try {
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) fatal('WebGL', 'недоступен — браузер не поддерживает WebGL');
+  } catch (err) { fatal('WebGL', err.message); }
+})();
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

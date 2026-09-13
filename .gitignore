@@ -1,0 +1,19 @@
+# зависимости (vendor/ внутри prototype — наоборот, коммитим, чтобы прототип запускался без сборки)
+node_modules/
+
+# артефакты тестов и скриншоты прогонов
+tools/shots/*.png
+tools/shots/*.json
+*.log
+
+# системное
+.DS_Store
+Thumbs.db
+
+# будущие сборки движков
+.godot/
+android-build/
+*.apk
+*.aab
+build/
+dist/
