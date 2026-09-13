@@ -1,36 +1,27 @@
-# Автоматическая проверка прототипа на каждый пуш и pull request.
-# Браузер не нужен: харнесс гоняет игровую логику в Node (three.js там работает
-# как чистая математика), поэтому проверка занимает секунды и ловит регрессии
-# в физике, ИИ, бою, криках, погоде и бюджете draw calls.
-name: Тесты прототипа
+name: Tests
 
 on:
   push:
+    branches:
+      - main
+      - "arena/**"
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  logic:
-    name: Синтаксис и игровая логика
+  test:
+    name: Game logic tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-
-      - name: Зависимости (только three.js)
-        run: npm ci
-
-      - name: Синтаксис всех файлов игры
-        run: |
-          find prototype/src tools -type f \( -name '*.js' -o -name '*.mjs' \) -print0 \
-            | xargs -0 -r -n1 node --check
-          node --check server.mjs
-
-      - name: Headless-харнесс (111+ проверок)
-        run: node tools/harness.mjs
-
-      - name: Целостность markup: все id из JS есть в play.html
-        run: node tools/checkids.mjs
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: node tools/syntax.mjs
+      - run: node tools/checkids.mjs
+      - run: node tools/harness.mjs

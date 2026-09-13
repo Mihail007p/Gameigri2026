@@ -8,7 +8,8 @@
     "start": "node server.mjs 3000",
     "smoke": "node tools/smoke.mjs",
     "links": "node tools/links.mjs",
-    "check": "node tools/checkids.mjs && node tools/harness.mjs"
+    "check": "node tools/syntax.mjs && node tools/checkids.mjs && node tools/harness.mjs",
+    "syntax": "node tools/syntax.mjs"
   },
   "dependencies": {
     "three": "^0.186.0"
