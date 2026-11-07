@@ -598,6 +598,7 @@ function update(dt) {
   hud.compass(p.camYaw);
   hud.quests(quest.tracker());
   hud.shoutState(p);
+  hud.spellState(p);
   hud.weather(game.weather);
 
   // свист ветра: раз в 3 секунды, громкость от силы непогоды

@@ -1,7 +1,7 @@
 // Игрок: движение от 3-го лица, камера, бой, выносливость, прокачка, инвентарь.
 import * as THREE from 'three';
 import { Rig, SKINS } from './humanoid.js';
-import { PLAYER as P, WORLD, ITEMS, SHOUTS, START_WORDS } from '../config.js';
+import { PLAYER as P, WORLD, ITEMS, SHOUTS, START_WORDS, MAGIC, START_SPELLS } from '../config.js';
 import { heightAt, slopeAt } from '../world/terrain.js';
 import { clamp, lerp, smoothstep } from '../utils/noise.js';
 import { sfx } from '../core/sfx.js';
@@ -57,6 +57,13 @@ export class Player {
     this.speed = 0;
     this.invuln = 0;
 
+    // заклинания (этап 1): один слот, ресурс — выносливость
+    this.spells = START_SPELLS.slice();
+    this.spell = this.spells[0];
+    this.spellCd = 0; this.spellT = -1; this.spellDone = true; this.spellDef = null;
+    // летящие огненные шары: {x,y,z,vx,vz,dist,maxDist,def}
+    this.fireballs = [];
+
     this.pos.y = heightAt(this.pos.x, this.pos.z);
     this.rig.root.position.copy(this.pos);
   }
@@ -81,6 +88,7 @@ export class Player {
     this._stamina(dt, m);
     this._move(dt, m);
     this._combat(dt, input);
+    this._updateFireballs(dt);
     this._animate(dt, m);
     this.updateCamera(dt);
 
@@ -304,10 +312,126 @@ export class Player {
     if (hits) sfx.hit();
   }
 
-  /* ═══════════════ бой ═══════════════ */
+  /* ══════════════════ заклинания ══════════════════ */
+  get spellDef_() { return MAGIC[this.spell] || null; }
+
+  /** Попытка каста заклинания. Возвращает false, если неready. */
+  trySpell() {
+    const def = this.spellDef_;
+    if (!def || this.dead || this.spellT >= 0 || this.dashT > 0 || this.blocking) return false;
+    if (this.spellCd > 0) {
+      this.game.hud.toast(`Заклинание не готово: ${Math.ceil(this.spellCd)} с`, 'bad');
+      return false;
+    }
+    if (this.st < def.stCost) {
+      this.game.hud.toast('Не хватает выносливости для заклинания', 'bad');
+      return false;
+    }
+    this.st -= def.stCost;
+    this.stDelay = P.stRegenDelay;
+    this.spellT = 0; this.spellDone = false; this.spellDef = def;
+    sfx.cast();
+    return true;
+  }
+
+  /** Переключить экипированное заклинание по кругу */
+  cycleSpell() {
+    if (this.spells.length < 2) return this.spellDef_;
+    const i = this.spells.indexOf(this.spell);
+    this.spell = this.spells[(i + 1) % this.spells.length];
+    const def = this.spellDef_;
+    sfx.ui();
+    this.game.hud.toast(`Заклинание: ${def.name} — ${def.hint}`, '');
+    return def;
+  }
+
+  /** Момент срабатывания заклинания */
+  _doSpell(def) {
+    const cy = this.camYaw;
+    _sh.set(-Math.sin(cy), 0, -Math.cos(cy));
+    this.yaw = Math.atan2(_sh.x, _sh.z);
+    sfx.spell(def.kind);
+
+    if (def.kind === 'heal') {
+      this.heal(def.power);
+      this.game.fx.burst(this.pos.x, this.pos.y + 1, this.pos.z, 0x8fe38f, 18, 2.6, 2.2, 1.0, 1.2);
+      return;
+    }
+
+    if (def.kind === 'sparks') {
+      const targets = [];
+      for (const e of this.game.enemies.list) {
+        if (e.dead) continue;
+        _tmp.copy(e.pos).sub(this.pos);
+        if (_tmp.length() > def.range) continue;
+        targets.push(e);
+        if (targets.length >= def.chain) break;
+      }
+      if (targets.length) {
+        const chainPts = targets.map(e => ({ x: e.pos.x, y: e.pos.y + 1, z: e.pos.z }));
+        this.game.fx.chain(this.pos.x, this.pos.y + 1.2, this.pos.z, chainPts, 0xbfe6ff, def.speed);
+        for (const e of targets) {
+          e.damage(def.dmg, this.pos, false);
+          e.applyImpulse(_sh.x, _sh.z, 2, 0);
+        }
+        if (targets.length) sfx.hit();
+      }
+      return;
+    }
+
+    // fireball: летящий шар по линии взгляда
+    if (def.kind === 'fireball') {
+      this.fireballs.push({
+        x: this.pos.x + _sh.x * 0.7, y: this.pos.y + 1.2, z: this.pos.z + _sh.z * 0.7,
+        vx: _sh.x, vz: _sh.z, dist: 0, maxDist: def.range, def,
+      });
+      this.game.fx.orb(this.pos.x + _sh.x * 0.7, this.pos.y + 1.2, this.pos.z + _sh.z * 0.7,
+        _sh.x, _sh.z, 0xff4500, def.speed, def.range);
+      sfx.fireball();
+    }
+  }
+
+  /** Движение огненных шаров, столкновения и ожог */
+  _updateFireballs(dt) {
+    for (let i = this.fireballs.length - 1; i >= 0; i--) {
+      const b = this.fireballs[i];
+      b.x += b.vx * b.def.speed * dt;
+      b.z += b.vz * b.def.speed * dt;
+      b.dist += b.def.speed * dt;
+
+      if (Math.random() < 0.6) {
+        this.game.fx.burst(b.x, b.y, b.z, 0xff4500, 1, 0, 0, 0.06, 0.7);
+      }
+
+      let hit = null;
+      for (const e of this.game.enemies.list) {
+        if (e.dead) continue;
+        _tmp.copy(e.pos).sub({ x: b.x, y: 0, z: b.z });
+        const d = Math.hypot(_tmp.x, _tmp.z);
+        if (d < 1.1 + e.radius) { hit = e; break; }
+      }
+
+      if (hit) {
+        hit.damage(b.def.dmg, this.pos, false);
+        hit.ignite(b.def.burn, b.def.burnDmg);
+        this.game.fx.burst(b.x, b.y, b.z, 0xff4500, 12, 4, 2, 0.5, 1.2);
+        sfx.hit();
+        this.fireballs.splice(i, 1);
+        continue;
+      }
+
+      if (b.dist >= b.maxDist) {
+        this.game.fx.burst(b.x, b.y, b.z, 0xff8c00, 6, 2, 1, 0.4, 0.9);
+        this.fireballs.splice(i, 1);
+      }
+    }
+  }
+
+  /* ══════════════════ бой ══════════════════ */  /* ═══════════════ бой ═══════════════ */
   _combat(dt, input) {
     if (this.attackCd > 0) this.attackCd -= dt;
     if (this.shoutCd > 0) this.shoutCd -= dt;
+    if (this.spellCd > 0) this.spellCd -= dt;
 
     // крик: кнопка 🐉 выкрикивает экипированное слово, ⇄ переключает слово
     if (input.consume('shoutNext')) this.cycleWord();
@@ -323,9 +447,22 @@ export class Player {
       }
     }
 
+    // заклинание: кнопка 🔮 кастует экипированное, ⇄переключает слово (совмещаем с криком)
+    if (input.consume('spell')) this.trySpell();
+    if (this.spellT >= 0) {
+      const def = this.spellDef || this.spellDef_;
+      this.spellT += dt;
+      if (!this.spellDone && this.spellT >= def.castTime) { this.spellDone = true; this._doSpell(def); }
+      if (this.spellT >= def.castTime + P.shoutCastPad) {
+        this.spellT = -1;
+        this.spellCd = def.cd;
+        this.spellDef = null;
+      }
+    }
+
     const wantAttack = input.held.attack || input.consume('attack');
     if (wantAttack && this.attackT < 0 && this.attackCd <= 0 && !this.blocking &&
-        this.st >= P.attackStCost && this.blockBroken <= 0 && this.shoutT < 0 && this.dashT <= 0) {
+        this.st >= P.attackStCost && this.blockBroken <= 0 && this.shoutT < 0 && this.spellT < 0 && this.dashT <= 0) {
       this.attackT = 0; this.hitDone = false;
       this.st -= P.attackStCost; this.stDelay = P.stRegenDelay;
       sfx.swing();
@@ -498,6 +635,7 @@ export class Player {
       gold: this.gold, kills: this.kills, hpMax: this.hpMax, dmg: this.dmg,
       inv: this.inventory.map(i => ({ ...i })), eq: this.equipped.slice(),
       words: this.words.slice(), word: this.word,
+      spells: this.spells.slice(), spell: this.spell, spellCd: Math.round(this.spellCd * 10) / 10,
     };
   }
 
@@ -518,6 +656,12 @@ export class Player {
     if (!this.words.length) this.words = START_WORDS.slice();
     this.word = SHOUTS[s.word] && this.words.includes(s.word) ? s.word : this.words[0];
     this.shoutCd = 0; this.shoutT = -1; this.shoutDone = true; this.shoutDef = null;
+    // заклинания из сейва
+    this.spells = Array.isArray(s.spells) ? s.spells.filter(sid => MAGIC[sid]) : [];
+    if (!this.spells.length) this.spells = START_SPELLS.slice();
+    this.spell = MAGIC[s.spell] && this.spells.includes(s.spell) ? s.spell : this.spells[0];
+    this.spellCd = s.spellCd ?? 0;
+    this.spellT = -1; this.spellDone = true; this.spellDef = null;
     this.dashT = 0; this.invuln = 0;
     this.dead = false; this.rig.deathT = -1; this.rig.pose.rotation.x = 0;
     this.rig.material.opacity = 1; this.rig.material.transparent = false;

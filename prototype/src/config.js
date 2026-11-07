@@ -150,6 +150,35 @@ export const SHOUTS = {
   },
 };
 
+/** КЛДОВЫЕ ЗАКЛИНАНИЯ (этап 1). Один слот, как крик: ресурс — выносливость,
+ *  дешевле и чаще криков, слабее. kind:
+ *    fireball — летящий шар, взрыв на цели + ожог (урон каждые 0.5 с)
+ *    sparks   — цепная молния между ближайшими врагами (до 3 целей)
+ *    heal     — мгновенное восстановление HP себе, пульс под ногами
+ */
+export const MAGIC = {
+  fireball: {
+    id: 'fireball', name: 'Огненная стрела', icon: '🔥', kind: 'fireball',
+    dmg: 22, range: 14, speed: 20, burn: 2.0, burnDmg: 3,
+    cd: 6, stCost: 10, castTime: 0.4, maxTargets: 1,
+    hint: 'Летит прямо, взрывается на цели и поджигает на 2 сек',
+  },
+  sparks: {
+    id: 'sparks', name: 'Искры', icon: '⚡', kind: 'sparks',
+    dmg: 9, range: 9, speed: 24, chain: 3, chainDist: 5,
+    cd: 5, stCost: 8, castTime: 0.3, maxTargets: 3,
+    hint: 'Цепная молния между ближайшими врагами (до 3)',
+  },
+  heal: {
+    id: 'heal', name: 'Исцеление', icon: '🌿', kind: 'heal',
+    power: 30, range: 0, cd: 8, stCost: 12, castTime: 0.5,
+    hint: 'Восстанавливает 30 HP себе, тратит выносливость',
+  },
+};
+
+/** Заклинание, которое игрок знает с самого начала */
+export const START_SPELLS = ['fireball'];
+
 /** Крик, который игрок знает с самого начала */
 export const START_WORDS = ['fus'];
 

@@ -62,6 +62,8 @@ class Enemy {
     this.hurtFlash = 0;
     // последствия криков: отброс (импульс), оглушение, заморозка
     this.knockX = 0; this.knockZ = 0; this.stun = 0; this.slow = 0;
+    // ожог огненной стрелы: урон каждые 0.5 с в течение burn секунд
+    this.burn = 0; this.burnDmg = 0; this.burnTick = 0;
 
     // полоска здоровья (видна только у раненого врага)
     const barY = (RIG_SCALE_BAR[kind] || 2.2) * this.def.scale;
@@ -124,6 +126,8 @@ class Enemy {
   }
 
   chill(sec) { this.slow = Math.max(this.slow, sec); }
+
+  ignite(sec, dmgPerTick) { this.burn = Math.max(this.burn, sec); this.burnDmg = dmgPerTick; this.burnTick = 0.5; }
 
   die() {
     this.hp = 0;
@@ -207,6 +211,20 @@ class Enemy {
       return;
     }
 
+    // ожог: урон каждые 0.5 с, пока горит
+    if (this.burn > 0) {
+      this.burn -= dt;
+      this.burnTick -= dt;
+      if (this.burnTick <= 0) {
+        this.burnTick = 0.5;
+        this.hp -= this.burnDmg;
+        this.game.hud.damageNumber(_tmp.copy(this.pos).setY(this.pos.y + 1.5), this.burnDmg, false, true);
+        this.game.fx.burst(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xff4500, 4, 1.5, 1.0, 0.3, 0.8);
+        if (this.hp <= 0) this.die();
+      }
+      if (this.burn <= 0) { this.burn = 0; this.burnDmg = 0; }
+    }
+
     // ночь и непогода делают тварей опаснее
     const th = threatOf(this.game);
     const detect = this.def.detect * (1 + th * NIGHT.detectMul);
@@ -269,6 +287,7 @@ class Enemy {
 
     // иней на замороженном враге (ставим ПОСЛЕ rig.animate — он сбрасывает emissive)
     if (this.slow > 0) this.rig.material.emissive.setRGB(0.06, 0.2, 0.36);
+    else if (this.burn > 0) this.rig.material.emissive.setRGB(0.35, 0.12, 0.0);
   }
 
   _face(dt, tx, tz) {

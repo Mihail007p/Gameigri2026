@@ -191,9 +191,27 @@ export class Hud {
     if (this._cdCache !== key) {
       this._cdCache = key;
       this.el.shoutCd.style.transform = `scaleY(${cd})`;
-      this.el.shout.classList.toggle('ready', !casting && p.shoutCd <= 0);
-      this.el.shout.classList.toggle('casting', casting);
     }
+    this.el.shout.classList.toggle('ready', !casting && p.shoutCd <= 0);
+    this.el.shout.classList.toggle('casting', casting);
+  }
+
+  /* ───────── заклинание: имя, иконка, кулдаун ───────── */
+  spellState(p) {
+    const def = p.spellDef_;
+    if (!def) return;
+    if (this._spellCache !== p.spell) {
+      this._spellCache = p.spell;
+      if (this.el.shoutNext) {
+        // показываем иконку текущего заклинания на кнопке переключения, если есть место
+        const el = this.el.shoutNext.querySelector('span');
+        if (el) el.textContent = def.icon;
+      }
+    }
+    const casting = p.spellT >= 0;
+    const cd = casting ? 1 : Math.max(0, Math.min(1, p.spellCd / def.cd));
+    // переиспользуем полоску крика для визуала кд заклинания, если кнопки нет
+    this.el.shout.classList.toggle('spell', casting);
   }
 
   /* ───────── панель производительности ───────── */

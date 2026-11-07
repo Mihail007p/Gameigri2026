@@ -55,7 +55,6 @@ export class Fx {
   shockwave(x, y, z, hex, { count = 26, speed = 13, life = 0.5, size = 1.1, dir = null, spread = Math.PI } = {}) {
     for (let i = 0; i < count; i++) {
       if (this.items.length >= MAX) this.items.shift();
-      // угол равномерно внутри конуса (или полный круг, если dir не задан)
       const a = dir
         ? Math.atan2(dir.x, dir.z) + (Math.random() * 2 - 1) * spread
         : Math.random() * Math.PI * 2;
@@ -66,6 +65,44 @@ export class Fx {
         life, max: life, size: size * (0.6 + Math.random() * 0.7),
         hex, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 8, g: 0,
       });
+    }
+  }
+
+  /**
+   * Летящий огненный шар (проектив): прямая линия без гравитации,
+   * исчезает на maxDist или при столкновении.
+   */
+  orb(x, y, z, dirX, dirZ, hex, speed, maxDist) {
+    if (this.items.length >= MAX) this.items.shift();
+    const life = maxDist / speed;
+    this.items.push({
+      x, y, z,
+      vx: dirX * speed, vy: 0, vz: dirZ * speed,
+      life, max: life, size: 0.9, hex,
+      rot: 0, spin: 20, g: 0, proj: true, dist: 0, maxDist,
+    });
+  }
+
+  /**
+   * Цепная молния: частицы летят от источника к каждой цели (до chain целей).
+   */
+  chain(x, y, z, targets, hex, speed = 24) {
+    for (const t of targets) {
+      const dx = t.x - x, dz = t.z - z;
+      const len = Math.hypot(dx, dz) || 1;
+      const steps = Math.ceil(len / 0.6);
+      const dirX = dx / len, dirZ = dz / len;
+      for (let s = 0; s < steps; s++) {
+        if (this.items.length >= MAX) break;
+        const k = (s + 0.5) / steps;
+        const life = 0.25;
+        this.items.push({
+          x: x + dirX * (k * len), y: y + 0.9, z: z + dirZ * (k * len),
+          vx: dirX * speed * 0.5, vy: 0, vz: dirZ * speed * 0.5,
+          life, max: life, size: 0.5, hex,
+          rot: 0, spin: 0, g: 0, proj: true, dist: 0, maxDist: 0.05,
+        });
+      }
     }
   }
 
@@ -94,6 +131,7 @@ export class Fx {
       const drag = p.g ? 2.2 : 3.4;        // волна крика гаснет быстрее
       p.vx *= 1 - drag * dt; p.vz *= 1 - drag * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      if (p.proj) { p.dist += Math.hypot(p.vx, p.vz) * dt; if (p.dist >= p.maxDist) { p.life = 0; continue; } }
       p.rot += p.spin * dt;
       const k = clamp(p.life / p.max, 0, 1);
       const s = p.size * (0.35 + k * 0.9);

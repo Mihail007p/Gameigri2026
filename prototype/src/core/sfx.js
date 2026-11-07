@@ -102,6 +102,31 @@ class Sfx {
     this.throttled('wh', 90, () => this.noise(0.34, { freq: 320, to: 2400, gain: 0.22, q: 0.6 }));
   }
 
+  /** Начало каста заклинания: короткий «вдох» */
+  cast() {
+    this.tone(700, 0.12, { type: 'sine', gain: 0.1, to: 1100 });
+  }
+
+  /** Срабатывание заклинания: окраска по виду магии */
+  spell(kind = 'fireball') {
+    if (kind === 'fireball') {
+      this.tone(320, 0.2, { type: 'square', gain: 0.14, to: 700 });
+      this.noise(0.25, { freq: 1400, to: 400, gain: 0.25, q: 0.5 });
+    } else if (kind === 'sparks') {
+      [660, 990, 1320].forEach((f, i) => this.tone(f, 0.12, { type: 'sine', gain: 0.1, delay: i * 0.05 }));
+      this.noise(0.18, { freq: 2600, to: 900, gain: 0.2, q: 0.6 });
+    } else { // heal
+      this.tone(880, 0.2, { type: 'triangle', gain: 0.12, to: 1320 });
+      this.tone(660, 0.25, { type: 'triangle', gain: 0.1, delay: 0.12 });
+    }
+  }
+
+  /** Выпуск огненного шара: вспышка + свист полёта */
+  fireball() {
+    this.tone(220, 0.15, { type: 'square', gain: 0.15, to: 440 });
+    this.noise(0.3, { freq: 400, to: 1600, gain: 0.18, q: 0.7 });
+  }
+
   /** Стена слов: гул камня и «вдох» силы */
   word() {
     if (!this.on) return;
